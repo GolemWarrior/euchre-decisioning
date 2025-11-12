@@ -294,7 +294,9 @@ def encode_state(round):
     ])
 
 
-        
+if __name__ == "__main__":
+    # TODO: Add basic tests to confirm functionality 
+    pass
             
     
 
