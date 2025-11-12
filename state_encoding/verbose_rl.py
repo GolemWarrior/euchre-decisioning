@@ -98,11 +98,8 @@ def encode_state(round):
     '''
     Returns a vector represented the complete set of past actions in a round with the upcard and dealer, fully determining the state.
 
-    While this is a theoretically lossless and complete representation, functionally it is might not be practical to train on such a large, unaugmented vector.
-
-    TODO: Add original hand of player
-
-    TODO: Since sections are split anyways (i.e. not set up for something like a transformer model), should make a version that uses different formats for each section
+    While this is a theoretically lossless and complete representation, functionally it might not be practical to train a completely unaugmented vector.
+    (E.g. doesn't say what trump is, uses a scalar for values like suit which don't have numerical relations, doesn't normalize players or suits, etc)
     '''
     assert not round.finished
 
@@ -113,8 +110,13 @@ def encode_state(round):
     upcard_erank = get_ecard_erank(upcard)
 
     original_hand = round.original_hands[round.current_player]
-    # TODO: Add original hand cards' suit and rank to vector
+    original_hand_vector = []
+    for ecard in original_hand:
+        esuit = get_ecard_esuit(ecard)
+        erank = get_ecard_erank(ecard)
+        original_hand_vector.append(esuit)
+        original_hand_vector.append(erank)
 
     dealer = round.dealer
 
-    return np.concatenate((np.array([dealer, int(upcard_esuit) + 1, int(upcard_erank) + 1]), np.concatenate(past_action_vectors)))
+    return np.concatenate((np.array([dealer, int(upcard_esuit) + 1, int(upcard_erank) + 1]), np.array(original_hand_vector), np.concatenate(past_action_vectors)))
