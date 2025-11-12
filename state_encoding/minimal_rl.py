@@ -25,6 +25,8 @@ def encode_state(round):
     hand_card_4 - 1-25 for cards
     team_tricks_won - 0-4
     opponent_tricks_won - 0-4
+
+    # TODO: Split each card property into suit and rank
     '''
 
     player = round.current_player
@@ -44,7 +46,7 @@ def encode_state(round):
 
         opponent_index = 0
         for i in range(trick_card_count):
-            back_index = -1 * (trick_card_count) - 1
+            back_index = -1 * (i) - 1
             played_ecard = round.played_ecards[back_index]
             action_record = round.past_actions[back_index]
             action_player, action, action_estate, played_ecard = action_record

@@ -100,7 +100,7 @@ def encode_state(round):
 
     While this is a theoretically lossless and complete representation, functionally it is might not be practical to train on such a large vector.
 
-    TODO: Since sections are split anyways (i.e. not set up for something like a transformer model), should a version that uses different formats for each section
+    TODO: Since sections are split anyways (i.e. not set up for something like a transformer model), should make a version that uses different formats for each section
     '''
     assert not round.finished
 
