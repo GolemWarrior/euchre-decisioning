@@ -89,4 +89,4 @@ def encode_state_with_card_prob(round):
 
     minimal_encoding = encode_state(round)
 
-    return np.concatenate((minimal_encoding, card_prob_matrix.flatten()))
+    return np.concatenate((minimal_encoding.flatten(), card_prob_matrix.flatten()))

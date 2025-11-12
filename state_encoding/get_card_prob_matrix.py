@@ -56,7 +56,7 @@ def get_card_prob_matrix(round, player):
     # Consider when/if players failed to follow suit
     if round.estate == PLAYING_STATE:
         esuit_constraints = {EPlayer(i): set() for i in range(PLAYER_COUNT)}
-        for i, action_record in enumerate(reversed([action_record for action_record in round.past_actions if round.past_actions[2] == PLAYING_STATE])):
+        for i, action_record in enumerate([action_record for action_record in round.past_actions if action_record[2] == PLAYING_STATE]):
             action_player, action, action_estate, played_ecard = action_record
 
             trick_index = int(i / 4)
@@ -66,9 +66,9 @@ def get_card_prob_matrix(round, player):
 
             is_led = led_suit == get_ecard_esuit(played_ecard)
             is_trump = round.trump_esuit == get_ecard_esuit(played_ecard)
-            is_right_bower = get_ecard_erank(played_ecard) == JACK and get_ecard_esuit(played_ecard) == get_same_color_esuit(round.trump_esuit)
+            is_left_bower = get_ecard_erank(played_ecard) == JACK and get_ecard_esuit(played_ecard) == get_same_color_esuit(round.trump_esuit)
 
-            if not (is_led or is_trump or is_right_bower):
+            if not (is_led or is_trump or is_left_bower):
                 esuit_constraints[action_player].add(led_suit)
 
         for i in range(DECK_SIZE):
@@ -76,11 +76,12 @@ def get_card_prob_matrix(round, player):
             esuit = get_ecard_esuit(ecard)
             for p in range(PLAYER_COUNT):
                 if esuit in esuit_constraints[p]:
-                    possibilities[i, player] = 0
+                    possibilities[i, p] = 0
 
-    # Normalize the possibilities to get probabilities (divide rows by row sums)
+    # Normalize the possibilities to get probabilities (divide rows by row sums, unless the sum is zero)
     row_sums = possibilities.sum(axis=1, keepdims=True)
-    normalized_possibilities = possibilities / row_sums
+    safe_row_sums = np.where(row_sums == 0, 1, row_sums)
+    normalized_possibilities = possibilities / safe_row_sums
     probabilities = normalized_possibilities
 
     return probabilities

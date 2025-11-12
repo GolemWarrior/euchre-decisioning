@@ -13,7 +13,7 @@ class ACTION_TYPE(IntEnum):
     PLAY = 5
 
 def make_none_action_vector():
-    np.array([0, ACTION_TYPE.NONE, 0, 0, 0, 0])
+    return np.array([0, ACTION_TYPE.NONE, 0, 0, 0, 0])
 
 def make_action_vector(player, type, is_order, is_go_alone, esuit=None, erank=None):
     esuit_value = 0
@@ -54,12 +54,12 @@ def encode_past_actions(round, player):
             action_type = ACTION_TYPE.BID
             if action == PASS:
                 action_vectors[action_section_indexes[action_type]] = make_action_vector(action_player, action_type, is_order=False, is_go_alone=False)
-                action_vectors[action_section_indexes[action_type]] += 1
+                action_section_indexes[action_type] += 1
             elif action == ORDER_UP:
                 action_vectors[action_section_indexes[action_type]] = make_action_vector(action_player, action_type, is_order=True, is_go_alone=False)
-                action_vectors[action_section_indexes[action_type]] += 1
+                action_section_indexes[action_type] += 1
         
-        if action == DEALER_DISCARD_STATE:
+        elif action_estate == DEALER_DISCARD_STATE:
             action_type = ACTION_TYPE.DISCARD
 
             # Player only gets discard information if they're the dealer
@@ -71,34 +71,34 @@ def encode_past_actions(round, player):
                 discarded_erank = get_ecard_erank(discarded_card)
             
             action_vectors[action_section_indexes[action_type]] = make_action_vector(action_player, action_type, is_order=False, is_go_alone=False, esuit=discarded_esuit, erank=discarded_erank)
-            action_vectors[action_section_indexes[action_type]] += 1
+            action_section_indexes[action_type] += 1
         
-        if action == CHOOSING_ESUIT_STATE:
+        elif action_estate == CHOOSING_ESUIT_STATE:
             chosen_esuit = round.trump_esuit
 
             action_type = ACTION_TYPE.CHOOSE
             action_vectors[action_section_indexes[action_type]] = make_action_vector(action_player, action_type, is_order=False, is_go_alone=False, esuit=chosen_esuit)
-            action_vectors[action_section_indexes[action_type]] += 1
+            action_section_indexes[action_type] += 1
 
-        if action_estate == DECIDING_GOING_ALONE_STATE:
+        elif action_estate == DECIDING_GOING_ALONE_STATE:
             going_alone = action == GO_ALONE
 
             action_type = ACTION_TYPE.GO_ALONE
             action_vectors[action_section_indexes[action_type]] = make_action_vector(action_player, action_type, is_order=False, is_go_alone=going_alone)
-            action_vectors[action_section_indexes[action_type]] += 1
+            action_section_indexes[action_type] += 1
 
-        if action_estate == PLAYING_STATE:
+        elif action_estate == PLAYING_STATE:
             action_type = ACTION_TYPE.PLAY
             action_vectors[action_section_indexes[action_type]] = make_action_vector(action_player, action_type, is_order=False, is_go_alone=False, esuit=get_ecard_esuit(played_ecard), erank=get_ecard_erank(played_ecard))
-            action_vectors[action_section_indexes[action_type]] += 1
+            action_section_indexes[action_type] += 1
     
     return action_vectors
 
 def encode_state(round):
     '''
-    Returns a vector represented the complete set of past actions in a round without any augmentation, fully determining the state.
+    Returns a vector represented the complete set of past actions in a round with the upcard and dealer, fully determining the state.
 
-    While this is a theoretically lossless and complete representation, functionally it is might not be practical to train on such a large vector.
+    While this is a theoretically lossless and complete representation, functionally it is might not be practical to train on such a large, unaugmented vector.
 
     TODO: Since sections are split anyways (i.e. not set up for something like a transformer model), should make a version that uses different formats for each section
     '''
@@ -106,4 +106,10 @@ def encode_state(round):
 
     past_action_vectors = encode_past_actions(round, round.current_player)
 
-    return np.concatenate(past_action_vectors)
+    upcard = round.upcard
+    upcard_esuit = get_ecard_esuit(upcard)
+    upcard_erank = get_ecard_erank(upcard)
+
+    dealer = round.dealer
+
+    return np.concatenate((np.array([dealer, int(upcard_esuit) + 1, int(upcard_erank) + 1]), np.concatenate(past_action_vectors)))
