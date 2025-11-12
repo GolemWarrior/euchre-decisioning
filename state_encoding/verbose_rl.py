@@ -100,6 +100,8 @@ def encode_state(round):
 
     While this is a theoretically lossless and complete representation, functionally it is might not be practical to train on such a large, unaugmented vector.
 
+    TODO: Add original hand of player
+
     TODO: Since sections are split anyways (i.e. not set up for something like a transformer model), should make a version that uses different formats for each section
     '''
     assert not round.finished
@@ -109,6 +111,9 @@ def encode_state(round):
     upcard = round.upcard
     upcard_esuit = get_ecard_esuit(upcard)
     upcard_erank = get_ecard_erank(upcard)
+
+    original_hand = round.original_hands[round.current_player]
+    # TODO: Add original hand cards' suit and rank to vector
 
     dealer = round.dealer
 
