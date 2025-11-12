@@ -159,8 +159,8 @@ def encode_tricks(round):
         in_order_trick_encodings.append(np.concatenate([np.array(start_player_one_hot), np.array(led_suit_one_hot), np.concatenate(played_ecards)]))
     
     trick_number = round.trick_number  # 0 for the first trick, 1 for the second, etc
-    # Slide the elements to the right by right_shift
     right_shift = (TRICK_COUNT - trick_number) % TRICK_COUNT
+    # Slide the elements to the right by right_shift
     most_recent_first_trick_encodings = in_order_trick_encodings[-right_shift:] + in_order_trick_encodings[:-right_shift]
 
     return np.concatenate(most_recent_first_trick_encodings)
@@ -319,7 +319,7 @@ def encode_state(round):
         np.array([opponent_trick_wins]),
         encoded_tricks,
         #seen_cards  # card_prob_matrix is used instead
-        card_prob_matrix.flatten()  # Larger vector but also very useful information that should speed up learning
+        card_prob_matrix.flatten()  # Larger vector but also very useful (difficult to learn) information that should speed up learning
     ])
 
 
