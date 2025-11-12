@@ -47,7 +47,7 @@ def encode_state(round):
             back_index = -1 * (trick_card_count) - 1
             played_ecard = round.played_ecards[back_index]
             action_record = round.past_actions[back_index]
-            action_player, action, action_estate = action_record
+            action_player, action, action_estate, played_ecard = action_record
 
             if get_teammate(player) == action_player:
                 teammate_card = 1 + int(played_ecard)

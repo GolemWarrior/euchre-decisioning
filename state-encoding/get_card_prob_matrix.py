@@ -57,17 +57,16 @@ def get_card_prob_matrix(round, player):
     if round.estate == PLAYING_STATE:
         esuit_constraints = {EPlayer(i): set() for i in range(PLAYER_COUNT)}
         for i, action_record in enumerate(reversed([action_record for action_record in round.past_actions if round.past_actions[2] == PLAYING_STATE])):
-            action_player, action, action_estate = action_record
+            action_player, action, action_estate, played_ecard = action_record
 
             trick_index = int(i / 4)
             played_cards = all_played_ecard_lists[trick_index]
             led_card = played_cards[0]
             led_suit = get_ecard_esuit(led_card)
-            played_card = played_cards[i - trick_index * 4]
 
-            is_led = led_suit == get_ecard_esuit(played_card)
-            is_trump = round.trump_esuit == get_ecard_esuit(played_card)
-            is_right_bower = get_ecard_erank(played_card) == JACK and get_ecard_esuit(played_card) == get_same_color_esuit(round.trump_esuit)
+            is_led = led_suit == get_ecard_esuit(played_ecard)
+            is_trump = round.trump_esuit == get_ecard_esuit(played_ecard)
+            is_right_bower = get_ecard_erank(played_ecard) == JACK and get_ecard_esuit(played_ecard) == get_same_color_esuit(round.trump_esuit)
 
             if not (is_led or is_trump or is_right_bower):
                 esuit_constraints[action_player].add(led_suit)

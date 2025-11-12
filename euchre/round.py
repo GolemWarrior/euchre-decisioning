@@ -127,7 +127,7 @@ class Round:
         assert action in self.get_actions(), f"The action {action} is not a legal move!"
         assert not self.finished, "No actions can be taken after the trick is finished!"
 
-        self.past_actions.append((self.current_player, action, self.estate))
+        self.past_actions.append((self.current_player, action, self.estate, None))  # The 4th entry is edited if the action is to play a card
 
         if self.estate == FIRST_BIDDING_STATE:
             if action == ORDER_UP:
@@ -179,6 +179,7 @@ class Round:
         elif self.estate == PLAYING_STATE:
             card_index = PLAY_CARD_ACTIONS.index(action)
             ecard = self.hands[self.current_player][card_index]
+            self.past_actions[-1] = (self.current_player, action, self.estate, ecard)
             self.hands[self.current_player][card_index] = None
             self.played_ecards.append(ecard)
 
