@@ -61,7 +61,7 @@ def create_card(ecard, upcard, trump_esuit=None):
                 elif esuit == get_same_color_esuit(trump_esuit):
                     is_left_bower = 1
 
-    return np.array[*suit_one_hot, normalized_rank, is_right_bower, is_left_bower, is_present]
+    return np.array([*suit_one_hot, normalized_rank, is_right_bower, is_left_bower, is_present])
 
 round_estate_to_int = {
     FIRST_BIDDING_STATE: 0,         # is_bidding
@@ -119,14 +119,14 @@ def encode_tricks(round):
     in_order_trick_encodings = []
     for trick_index in range(TRICK_COUNT):
         trick_action_records = trick_index_to_action_records[trick_index]
-        trick_cards = all_played_ecard_lists[trick_index]
+        trick_cards = all_played_ecard_lists[trick_index] if trick_index <= round.trick_number else []
 
         start_player_one_hot = [0] * PLAYER_COUNT
         if len(trick_action_records) > 0:
             # Get the player of the first action record
             start_player = trick_action_records[0][0]
             start_player_one_hot[player_normalization_mapping[player][start_player]] = 1
-        else:
+        elif trick_index <= round.trick_number:
             # If no cards have been played in the trick, then the current player is the one who is the starter
             start_player_one_hot[player_normalization_mapping[player][player]] = 1
         
@@ -143,14 +143,14 @@ def encode_tricks(round):
 
             played_ecards[normalized_action_player] = create_card(played_ecard, round.upcard, trump_esuit=round.trump_esuit)
         
-        in_order_trick_encodings.append(np.flatten([np.array(start_player_one_hot), np.array(led_suit_one_hot), np.flatten(played_ecards)]))
+        in_order_trick_encodings.append(np.concatenate([np.array(start_player_one_hot), np.array(led_suit_one_hot), np.concatenate(played_ecards)]))
     
     trick_number = round.trick_number  # 0 for the first trick, 1 for the second, etc
     # Slide the elements to the right by right_shift
     right_shift = (TRICK_COUNT - trick_number) % TRICK_COUNT
     most_recent_first_trick_encodings = in_order_trick_encodings[-right_shift:] + in_order_trick_encodings[:-right_shift]
 
-    return np.flatten(most_recent_first_trick_encodings)
+    return np.concatenate(most_recent_first_trick_encodings)
 
 def encode_seen_cards(round):
     card_seen = [0] * DECK_SIZE
@@ -221,7 +221,7 @@ def encode_state(round):
     def sort_card(ecard):
         # Sort by is_present, is_right_bower, is_left_bower, is_trump, rank, suit, and finally original ordering
         trump_esuit = round.trump_esuit if round.trump_esuit is not None else get_ecard_esuit(round.upcard)
-        ecard_esuit = get_ecard_esuit(ecard)
+        ecard_esuit = get_ecard_esuit(ecard) if ecard is not None else None
 
         is_present = int(ecard is not None)
         is_right_bower = int(ecard_esuit == trump_esuit and get_ecard_erank(ecard) == JACK) if ecard is not None else 0
@@ -275,23 +275,23 @@ def encode_state(round):
     #seen_cards = encode_seen_cards(round)  # TODO: While seen cards is smaller, a card probability matrix has more "intuitive" information, since player suit constraints don't need to be learned
     card_prob_matrix = get_card_prob_matrix(round)
 
-    return np.concatenate(
+    return np.concatenate([
         upcard_encoding,
-        np.flatten(hand_card_encodings),
-        np.array(got_to_second_bidding),
-        np.array(normalized_round_state),
+        np.concatenate(hand_card_encodings),
+        np.array([got_to_second_bidding]),
+        np.array([normalized_round_state]),
         np.array(player_passes),
         np.array(maker),
-        np.array(did_dealer_discard),
-        np.array(is_maker_going_alone),
+        np.array([did_dealer_discard]),
+        np.array([is_maker_going_alone]),
         np.array(dealer),
-        np.array(trick_number_normalized),
-        np.array(team_trick_wins),
-        np.array(opponent_trick_wins),
+        np.array([trick_number_normalized]),
+        np.array([team_trick_wins]),
+        np.array([opponent_trick_wins]),
         encoded_tricks,
         #seen_cards
-        card_prob_matrix  # Larger vector but also very useful information that should speed up learning
-    )
+        card_prob_matrix.flatten()  # Larger vector but also very useful information that should speed up learning
+    ])
 
 
         
