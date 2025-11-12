@@ -77,6 +77,9 @@ def encode_tricks(round):
     (Most recent game is in this slot, then the following games in the next, with unknown values filled with 0s)
     (The start_player also describes who won the previous round)
 
+    
+    TRICK HISTORY ENCODING:
+
     start_player: 1 hot 4 vector
     led_suit: 1 hot 4 vector
     played_card: Card
