@@ -62,6 +62,7 @@ class Round:
         self.hands = [list([ECard(npint) for npint in array]) for array in np.array_split(self.deck.draw_ecards(16), 4)]
 
         self.upcard = ECard(self.deck.draw_ecards(1)[0])
+        self.discarded_card = None
         self.estate = FIRST_BIDDING_STATE
 
         self.trump_esuit = None
@@ -69,6 +70,7 @@ class Round:
         self.going_alone = False
 
         self.played_ecards = []
+        self.past_played_ecard_lists = []
         self.past_actions = []
 
     def get_actions(self) -> set[IntEnum]:
@@ -144,6 +146,7 @@ class Round:
 
         elif self.estate == DEALER_DISCARD_STATE:
             replace_index = PLAY_CARD_ACTIONS.index(action)
+            self.discarded_card = self.hands[self.current_player][replace_index]
             self.hands[self.current_player][replace_index] = self.upcard
 
             self.current_player = self.maker
@@ -210,6 +213,7 @@ class Round:
 
         # Set up the next trick
         self.trick_number += 1
+        self.past_played_ecard_lists.append(self.played_ecards)
         self.played_ecards = []
         self.current_player = winning_player
 
