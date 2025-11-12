@@ -6,6 +6,7 @@ from euchre.players import EPlayer, get_teammate, eplayer_to_team_index, get_oth
 
 from .get_card_prob_matrix import get_card_prob_matrix
 
+# For each possible trump suit, get a mapping from the suits to the normalized suits
 suit_normalization_mapping = {}
 for i in range(len(SUITS)):
     esuit = ESuit(i)
@@ -21,6 +22,7 @@ for i in range(len(SUITS)):
 
     suit_normalization_mapping[esuit] = {esuit: ESuit(i) for i, esuit in enumerate(suits)}
 
+# For each possible current player, get a mapping from player to normalized player
 player_normalization_mapping = {}
 for i in range(PLAYER_COUNT):
     eplayer = EPlayer(i)
@@ -37,6 +39,12 @@ for i in range(PLAYER_COUNT):
     player_normalization_mapping[eplayer] = {eplayer: EPlayer(i) for i, eplayer in enumerate(eplayers)}
 
 def create_card(ecard, upcard, trump_esuit=None):
+    '''
+    Create a vector for a card based on the trump suit (or upcard suit if no trump suit)
+
+    If ecard is None returns a zero vector (aka is_present indicator is 0, in addition to the other values)
+    Should have an upcard if ecard is not None
+    '''
     suit_one_hot = [0] * len(SUITS)
     normalized_rank = 0
     is_right_bower = 0
@@ -63,6 +71,7 @@ def create_card(ecard, upcard, trump_esuit=None):
 
     return np.array([*suit_one_hot, normalized_rank, is_right_bower, is_left_bower, is_present])
 
+# Make a map from RoundEStates to representative integers
 round_estate_to_int = {
     FIRST_BIDDING_STATE: 0,         # is_bidding
     SECOND_BIDDING_STATE: 0,        # is_bidding
@@ -74,11 +83,12 @@ round_estate_to_int = {
 
 def encode_tricks(round):
     '''
-    (Most recent game is in this slot, then the following games in the next, with unknown values filled with 0s)
-    (The start_player also describes who won the previous round)
-
+    Return a flattened vector encoding the trick history (including the current trick)
     
     TRICK HISTORY ENCODING:
+
+    (Most recent game is in this slot, then the following games in the next, with unknown values filled with 0s)
+    (The start_player also describes who won the previous round)
 
     start_player: 1 hot 4 vector
     led_suit: 1 hot 4 vector
@@ -156,6 +166,9 @@ def encode_tricks(round):
     return np.concatenate(most_recent_first_trick_encodings)
 
 def encode_seen_cards(round):
+    '''
+    Return a 20 vector for whether each card has already been played (or discarded if the current player is the dealer)
+    '''
     card_seen = [0] * DECK_SIZE
     for i, action_record in enumerate([action_record for action_record in round.past_actions if action_record[2] == PLAYING_STATE]):
         action_player, action, action_estate, played_ecard = action_record
@@ -169,6 +182,8 @@ def encode_seen_cards(round):
 
 def encode_state(round):
     '''
+    Returns an encoded state vector for the given round's state (relative to round.current_player)
+
     SCHEMA DETAILS:
 
     Current player is mapped to 0
@@ -220,6 +235,8 @@ def encode_state(round):
     upcard_encoding = create_card(upcard, upcard=upcard, trump_esuit=round.trump_esuit)
 
     player = round.current_player
+
+    # Encode the cards in the player's hand, with used cards as zero vectors and the cards sorted (roughly by strength independent of led suit)
     player_hand = round.hands[player]
     def sort_card(ecard):
         # Sort by is_present, is_right_bower, is_left_bower, is_trump, rank, suit, and finally original ordering
@@ -238,6 +255,7 @@ def encode_state(round):
     sorted_player_hand = sorted(player_hand, key=sort_card)
     hand_card_encodings = [create_card(card, upcard=upcard, trump_esuit=round.trump_esuit) for card in sorted_player_hand]
 
+    # Get whether the bidding went to the second round (as 0/1)
     got_to_second_bidding = 0
     for action_record in round.past_actions:
         action_player, action, action_estate, played_ecard = action_record
@@ -245,9 +263,11 @@ def encode_state(round):
             got_to_second_bidding = 1
             break
     
+    # Map the RoundEState to a representative int (then normalize)
     round_state_int = round_estate_to_int[round.estate]
     normalized_round_state = round_state_int / max(list(round_estate_to_int.values()))
     
+    # Iterate over the actions and get the passes for the last bidding round, the maker, whether the dealer discarded, and whether the maker is going alone
     last_bidding_round = FIRST_BIDDING_STATE if got_to_second_bidding == 0 else SECOND_BIDDING_STATE
     player_passes = [0] * PLAYER_COUNT
     maker = [0] * PLAYER_COUNT
@@ -266,16 +286,22 @@ def encode_state(round):
             if action == GO_ALONE:
                 is_maker_going_alone = 1
     
+    # Get the dealer
     dealer = [0] * PLAYER_COUNT
     dealer[player_normalization_mapping[player][round.dealer]] = 1
 
+    # Get a normalized value for which trick the round is on
     trick_number_normalized = round.trick_number / (TRICK_COUNT - 1)
+    # Get a normalized value for how many team tricks have been won
     team_trick_wins = round.trick_wins[eplayer_to_team_index(eplayer)] / (TRICK_COUNT - 1)
+    # Get a normalized value for how many opponent tricks have been won
     opponent_trick_wins = round.trick_wins[get_other_team_index(eplayer_to_team_index(eplayer))] / (TRICK_COUNT - 1)
 
+    # Get an encoding for the tricks (e.g. cards played, who went first, etc)
     encoded_tricks = encode_tricks(round)
 
-    #seen_cards = encode_seen_cards(round)  # TODO: While seen cards is smaller, a card probability matrix has more "intuitive" information, since player suit constraints don't need to be learned
+    #seen_cards = encode_seen_cards(round)  # While seen cards is smaller, a card probability matrix has more "intuitive" information, since player suit constraints don't need to be learned
+    # Get a matrix for the probability a player has a card based only on the seen cards and failures to follow suit
     card_prob_matrix = get_card_prob_matrix(round)
 
     return np.concatenate([
@@ -292,7 +318,7 @@ def encode_state(round):
         np.array([team_trick_wins]),
         np.array([opponent_trick_wins]),
         encoded_tricks,
-        #seen_cards
+        #seen_cards  # card_prob_matrix is used instead
         card_prob_matrix.flatten()  # Larger vector but also very useful information that should speed up learning
     ])
 
