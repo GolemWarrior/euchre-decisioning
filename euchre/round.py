@@ -67,7 +67,7 @@ class Round:
 
         self.trump_esuit = None
         self.maker = None
-        self.going_alone = False
+        self.going_alone = None
 
         self.played_ecards = []
         self.past_played_ecard_lists = []

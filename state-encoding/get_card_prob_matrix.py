@@ -1,6 +1,6 @@
 import numpy as np
 
-from euchre.deck import ECard, get_ecard_esuit, get_ecard_esuit, get_ecard_erank, get_same_color_esuit, JACK, DECK_SIZE
+from euchre.deck import ECard, get_ecard_esuit, get_ecard_erank, get_same_color_esuit, JACK, DECK_SIZE
 from euchre.players import EPlayer, PLAYER_COUNT
 from euchre.round import PLAYING_STATE
 
