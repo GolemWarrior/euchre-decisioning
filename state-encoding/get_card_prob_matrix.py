@@ -4,6 +4,7 @@ from euchre.deck import ECard, get_ecard_esuit, get_ecard_erank, get_same_color_
 from euchre.players import EPlayer, PLAYER_COUNT
 from euchre.round import PLAYING_STATE
 
+
 def get_card_prob_matrix(round, player):
     '''
     Return matrix representing the probability of a card being in each player's hand given only the
@@ -31,7 +32,7 @@ def get_card_prob_matrix(round, player):
     else:
         seen_cards.add(round.upcard)
     
-    hand_cards = set(round.hands[player])
+    hand_cards = set([ecard for ecard in round.hands[player] if ecard is not None])
     
     # A matrix where each [ecard, eplayer] represents whether it's possible for eplayer to have ecard in their hand
     possibilities = np.ones((DECK_SIZE, PLAYER_COUNT))

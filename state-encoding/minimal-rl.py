@@ -1,12 +1,14 @@
 import numpy as np
 
 from euchre.deck import get_ecard_esuit
-from euchre.players import get_teammate, eplayer_to_team_index, get_other_team_index
+from euchre.players import get_teammate, eplayer_to_team_index, get_other_team_index, PLAYER_COUNT
+
+from .get_card_prob_matrix import get_card_prob_matrix
 
 
 def encode_state(round):
     '''
-    Converts a round to a very minimal (lossy) state vector to use for RL.
+    Converts a round to a very minimal (lossy) state vector to use for NN-based RL (e.g. DQL)
 
     The state vector contains:
     round_state - 0-5 based on the round state
@@ -24,16 +26,6 @@ def encode_state(round):
     team_tricks_won - 0-4
     opponent_tricks_won - 0-4
     '''
-    #round_state = None # 0-5
-    #teammate_card = None # 0 for None, 1-25 for cards
-    #opponent_cards = [None, None] # Two ints, 0 for None, 1-25 for cards
-    #trump_suit = None # 0 for None, 1-4 for suits
-    #led_suit = None # 0 for None, 1-4 for suits
-    #is_team_maker = None # 0 for None, 1-2 for no/yes
-    #is_going_alone = None # 0 for None, 1-2 for no/yes
-    #hand = [None, None, None, None] # Four ints, 0 for None, 1-25 for cards
-    #team_tricks_won = None # 0-4
-    #opponent_tricks_won = None # 0-4
 
     player = round.current_player
 
@@ -73,6 +65,8 @@ def encode_state(round):
     
     hand_cards = []
     for ecard in round.hands[player]:
+        if ecard is None:
+            continue
         hand_cards.append(1 + int(ecard))
     
     team_index = eplayer_to_team_index(player)
@@ -80,3 +74,17 @@ def encode_state(round):
     opponent_tricks_won = round.trick_wins[get_other_team_index(team_index)]
 
     return np.array([round_state, trump_suit, led_suit, teammate_card, *opponent_cards, is_team_maker, is_going_alone, *hand_cards, team_tricks_won, opponent_tricks_won])
+
+def encode_state_with_card_prob(round):
+    '''
+    Returns a state encoding, specifically the minimal encoding with the flattened card probabilities concatenated to the end
+    '''
+    player = round.current_player
+
+    card_prob_matrix = get_card_prob_matrix(round, player)
+    # Move the columns such that the current player is in the first column
+    card_prob_matrix = np.roll(card_prob_matrix, shift=-int(player), axis=1)
+
+    minimal_encoding = encode_state(round)
+
+    return np.concatenate((minimal_encoding, card_prob_matrix.flatten()))
