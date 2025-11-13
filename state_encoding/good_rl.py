@@ -236,24 +236,26 @@ def encode_state(round):
 
     player = round.current_player
 
-    # Encode the cards in the player's hand, with used cards as zero vectors and the cards sorted (roughly by strength independent of led suit)
+    # Encode the cards in the player's hand, with used cards as zero vectors (not sorted so encoding card to action correspondence is clear)
+    # (A later extension might be to do sorting and remap the outputted action from the sorted cards to the unsorted cards)
     player_hand = round.hands[player]
-    def sort_card(ecard):
-        # Sort by is_present, is_right_bower, is_left_bower, is_trump, rank, suit, and finally original ordering
-        trump_esuit = round.trump_esuit if round.trump_esuit is not None else get_ecard_esuit(round.upcard)
-        ecard_esuit = get_ecard_esuit(ecard) if ecard is not None else None
-
-        is_present = int(ecard is not None)
-        is_right_bower = int(ecard_esuit == trump_esuit and get_ecard_erank(ecard) == JACK) if ecard is not None else 0
-        is_left_bower = int(ecard_esuit == get_same_color_esuit(trump_esuit) and get_ecard_erank(ecard) == JACK) if ecard is not None else 0
-        is_trump = int(ecard_esuit == trump_esuit) if ecard is not None else 0
-        rank = int(get_ecard_erank(ecard)) if ecard is not None else 0
-        suit = int(suit_normalization_mapping[trump_esuit][ecard_esuit]) if ecard is not None else 0
-
-        return (is_present, is_right_bower, is_left_bower, is_trump, len(RANKS) - rank, suit)
-        
-    sorted_player_hand = sorted(player_hand, key=sort_card)
-    hand_card_encodings = [create_card(card, upcard=upcard, trump_esuit=round.trump_esuit) for card in sorted_player_hand]
+    #def sort_card(ecard):
+    #    # Sort by is_present, is_right_bower, is_left_bower, is_trump, rank, suit, and finally original ordering
+    #    trump_esuit = round.trump_esuit if round.trump_esuit is not None else get_ecard_esuit(round.upcard)
+    #    ecard_esuit = get_ecard_esuit(ecard) if ecard is not None else None
+    #
+    #    is_present = int(ecard is not None)
+    #    is_right_bower = int(ecard_esuit == trump_esuit and get_ecard_erank(ecard) == JACK) if ecard is not None else 0
+    #    is_left_bower = int(ecard_esuit == get_same_color_esuit(trump_esuit) and get_ecard_erank(ecard) == JACK) if ecard is not None else 0
+    #    is_trump = int(ecard_esuit == trump_esuit) if ecard is not None else 0
+    #    rank = int(get_ecard_erank(ecard)) if ecard is not None else 0
+    #    suit = int(suit_normalization_mapping[trump_esuit][ecard_esuit]) if ecard is not None else 0
+    #
+    #    return (is_present, is_right_bower, is_left_bower, is_trump, len(RANKS) - rank, suit)
+    #    
+    #sorted_player_hand = sorted(player_hand, key=sort_card)
+    #hand_card_encodings = [create_card(card, upcard=upcard, trump_esuit=round.trump_esuit) for card in sorted_player_hand]
+    hand_card_encodings = [create_card(card, upcard=upcard, trump_esuit=round.trump_esuit) for card in player_hand]
 
     # Get whether the bidding went to the second round (as 0/1)
     got_to_second_bidding = 0
