@@ -1,7 +1,7 @@
 import numpy as np
 
 from euchre.deck import ESuit, get_ecard_esuit, get_ecard_erank, get_same_color_esuit, DECK_SIZE, RANKS, SUITS, JACK
-from euchre.round import TRICK_COUNT, FIRST_BIDDING_STATE, DEALER_DISCARD_STATE, SECOND_BIDDING_STATE, CHOOSING_ESUIT_STATE, DECIDING_GOING_ALONE_STATE, PLAYING_STATE, PASS, ORDER_UP, GO_ALONE
+from euchre.round import EAction, ACTIONS, TRICK_COUNT, FIRST_BIDDING_STATE, DEALER_DISCARD_STATE, SECOND_BIDDING_STATE, CHOOSING_ESUIT_STATE, DECIDING_GOING_ALONE_STATE, PLAYING_STATE, PASS, ORDER_UP, GO_ALONE
 from euchre.players import EPlayer, get_teammate, eplayer_to_team_index, get_other_team_index, PLAYER_COUNT
 
 from .get_card_prob_matrix import get_card_prob_matrix
@@ -175,7 +175,7 @@ def encode_seen_cards(round):
 
         card_seen[played_ecard] = 1
     
-    if round.dealer == round.current_player:
+    if round.dealer == round.current_player and round.discarded_card is not None:
         card_seen[round.discarded_card] = 1
     
     return np.array(card_seen)
@@ -230,6 +230,8 @@ def encode_state(round):
     [TRICK HISTORY ENCODING]
 
     [EITHER SEEN CARDS (including discarded card if dealer) OR CARD PROB MATRIX]
+
+    legal_actions: 1 hot 9 vector (for whether each action is legal)
     '''
     upcard = round.upcard
     upcard_encoding = create_card(upcard, upcard=upcard, trump_esuit=round.trump_esuit)
@@ -300,11 +302,19 @@ def encode_state(round):
     opponent_trick_wins = round.trick_wins[get_other_team_index(eplayer_to_team_index(eplayer))] / (TRICK_COUNT - 1)
 
     # Get an encoding for the tricks (e.g. cards played, who went first, etc)
-    encoded_tricks = encode_tricks(round)
+    #encoded_tricks = encode_tricks(round)
 
-    #seen_cards = encode_seen_cards(round)  # While seen cards is smaller, a card probability matrix has more "intuitive" information, since player suit constraints don't need to be learned
+    seen_cards = encode_seen_cards(round)  # While seen cards is smaller, a card probability matrix has more "intuitive" information, since player suit constraints don't need to be learned
     # Get a matrix for the probability a player has a card based only on the seen cards and failures to follow suit
-    card_prob_matrix = get_card_prob_matrix(round)
+    #card_prob_matrix = get_card_prob_matrix(round)
+
+    # Added to make selecting legal actions easier in training (outside of training the max legal action is used)
+    legal_one_hot = [0] * len(ACTIONS)
+    legal_actions = round.get_actions()
+    for i in range(len(ACTIONS)):
+        action = EAction(i)
+        if action in legal_actions:
+            legal_one_hot[i] = 1
 
     return np.concatenate([
         upcard_encoding,
@@ -319,9 +329,10 @@ def encode_state(round):
         np.array([trick_number_normalized]),
         np.array([team_trick_wins]),
         np.array([opponent_trick_wins]),
-        encoded_tricks,
-        #seen_cards  # card_prob_matrix is used instead
-        card_prob_matrix.flatten()  # Larger vector but also very useful (difficult to learn) information that should speed up learning
+        #encoded_tricks,
+        seen_cards,  # card_prob_matrix is used instead
+        #card_prob_matrix.flatten(),  # Larger vector but also very useful (difficult to learn) information that should speed up learning
+        np.array(legal_one_hot)
     ])
 
 

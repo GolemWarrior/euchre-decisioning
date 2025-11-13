@@ -11,16 +11,16 @@ ENCODING_LENGTH = len(encode_state(Round()))
 ACTION_COUNT = len(ACTIONS)
 
 WIN_TRICK = 1
-LOSE_TRICK = -1
+LOSE_TRICK = -WIN_TRICK
 
 PER_WON_POINT = 10
-PER_LOST_POINT = -10
+PER_LOST_POINT = -PER_WON_POINT
 
-ILLEGAL_MOVE = -50
+ILLEGAL_MOVE = -1  # Playing an illegal move results in a random move being played (TODO: Should it instead just have negative reward and play no move?)
 
 def play_round_until_player(round, player):
     # TODO: Train against better play than random
-    while not round.finished and round.current_player != player:
+    while not (round.finished or round.current_player == player):
         round.take_action(random.choice(list(round.get_actions())))
 
 class EuchreEnvironment(gym.Env):
@@ -36,32 +36,47 @@ class EuchreEnvironment(gym.Env):
         # Will be set to meaningful values because reset is called before learning starts
         self.state = np.zeros(300, dtype=np.float32)
         self.player = 0
+        self.round = None
     
+    def action_masks(self):
+        is_legal = [0] * len(ACTIONS)
+        legal_actions = self.round.get_actions()
+        for i in range(len(ACTIONS)):
+            action = EAction(i)
+            if action in legal_actions:
+                is_legal[i] = 1
+        
+        return np.array(is_legal).astype(bool)
+
     def reset(self, seed=None, options=None):
         self.player = EPlayer(random.randint(0, PLAYER_COUNT - 1))
         self.round = Round()
         play_round_until_player(self.round, self.player)
-        if self.round.finished:
-            while self.round.finished:
-                self.round = Round()
-                play_round_until_player(self.round, self.player)
 
         self.state = encode_state(self.round)
         info = {}
         return self.state, info
     
     def step(self, action):
+        assert self.round.current_player == self.player, "Agent should only make moves for themselves!"
+
         reward = 0
         round_action = EAction(int(action))
         legal_actions = self.round.get_actions()
 
         if EAction(round_action) not in legal_actions:
             reward += ILLEGAL_MOVE
-            round_action = random.choice(list(legal_actions))
-        
+            # Instead of taking a random action,
+            #round_action = random.choice(list(legal_actions))
+            # Give the agent a negative reward and leave it in the same state to decide again
+            info = {}
+            truncated = False
+            return self.state, reward, terminated, truncated, info
+
         before_trick_wins = self.round.trick_wins.copy()
 
         self.round.take_action(round_action)
+        play_round_until_player(self.round, self.player)
 
         team_index = eplayer_to_team_index(self.player)
         opposing_team_index = get_other_team_index(team_index)
