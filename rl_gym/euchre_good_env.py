@@ -1,6 +1,6 @@
 import random
-import gym
-from gym import spaces
+import gymnasium as gym
+from gymnasium import spaces
 import numpy as np
 
 from euchre.round import Round, EAction, ACTIONS
@@ -37,7 +37,7 @@ class EuchreEnvironment(gym.Env):
         self.state = np.zeros(300, dtype=np.float32)
         self.player = 0
     
-    def reset(self):
+    def reset(self, seed=None, options=None):
         self.player = EPlayer(random.randint(0, PLAYER_COUNT - 1))
         self.round = Round()
         play_round_until_player(self.round, self.player)
@@ -47,37 +47,38 @@ class EuchreEnvironment(gym.Env):
                 play_round_until_player(self.round, self.player)
 
         self.state = encode_state(self.round)
-        return self.state
+        info = {}
+        return self.state, info
     
     def step(self, action):
         reward = 0
-        round_action = EAction(action)
+        round_action = EAction(int(action))
         legal_actions = self.round.get_actions()
 
-        if round_action not in legal_actions:
+        if EAction(round_action) not in legal_actions:
             reward += ILLEGAL_MOVE
             round_action = random.choice(list(legal_actions))
         
-        before_trick_wins = round.trick_wins.copy()
+        before_trick_wins = self.round.trick_wins.copy()
 
         self.round.take_action(round_action)
 
         team_index = eplayer_to_team_index(self.player)
         opposing_team_index = get_other_team_index(team_index)
 
-        reward += (round.trick_wins[team_index] - before_trick_wins[team_index]) * WIN_TRICK
-        reward += (round.trick_wins[opposing_team_index] - before_trick_wins[opposing_team_index]) * LOSE_TRICK
+        reward += (self.round.trick_wins[team_index] - before_trick_wins[team_index]) * WIN_TRICK
+        reward += (self.round.trick_wins[opposing_team_index] - before_trick_wins[opposing_team_index]) * LOSE_TRICK
 
         self.state = encode_state(self.round)
         
-        done = self.round.finished
-        if done:
+        terminated = self.round.finished
+        if terminated:
             round_points = self.round.round_points
             win_points = round_points[team_index]
             loss_points = round_points[opposing_team_index]
             reward += win_points * PER_WON_POINT + loss_points * PER_LOST_POINT
         
         info = {}
-
-        return self.state, reward, done, info
+        truncated = False
+        return self.state, reward, terminated, truncated, info
 
