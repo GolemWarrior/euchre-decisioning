@@ -12,7 +12,9 @@ env = DummyVecEnv([make_env])
 
 #TIME_STEPS = 10000 #200000
 #TIME_STEPS = 200000
-TIME_STEPS = 4000000
+#TIME_STEPS = 3000000  # About 20 mins, "Mean reward: 2.6364 +/- 15.607512134866337"
+#TIME_STEPS = 8000000  # About 55 mins, "Mean reward: 2.89266 +/- 15.559961379270836"
+TIME_STEPS = 20000000 # About 2.5 hrs, "Mean reward: 3.5897 +/- 15.56185380698585"
 
 # Specify a DQN model
 # (POTENTIALLY) TODO: Ideally would wrap the DQN to add action masking so only legal actions can be selected
@@ -60,8 +62,8 @@ model = MaskablePPO(
 
     policy_kwargs=dict(
         net_arch=dict(
-            pi=[256, 128],  # Policy
-            vf=[128, 128]   # Value
+            pi=[256, 128, 64],  # Policy
+            vf=[128, 64, 16]    # Value
         ),
         activation_fn=torch.nn.ReLU,
     ),

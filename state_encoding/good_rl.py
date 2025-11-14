@@ -302,9 +302,9 @@ def encode_state(round):
     opponent_trick_wins = round.trick_wins[get_other_team_index(eplayer_to_team_index(eplayer))] / (TRICK_COUNT - 1)
 
     # Get an encoding for the tricks (e.g. cards played, who went first, etc)
-    #encoded_tricks = encode_tricks(round)
+    encoded_tricks = encode_tricks(round)
 
-    seen_cards = encode_seen_cards(round)  # While seen cards is smaller, a card probability matrix has more "intuitive" information, since player suit constraints don't need to be learned
+    seen_cards = encode_seen_cards(round)  # Seen cards is smaller, while card probability matrix has more "intuitive" information, since player suit constraints don't need to be learned
     # Get a matrix for the probability a player has a card based only on the seen cards and failures to follow suit
     #card_prob_matrix = get_card_prob_matrix(round)
 
@@ -329,9 +329,9 @@ def encode_state(round):
         np.array([trick_number_normalized]),
         np.array([team_trick_wins]),
         np.array([opponent_trick_wins]),
-        #encoded_tricks,
-        seen_cards,  # card_prob_matrix is used instead
-        #card_prob_matrix.flatten(),  # Larger vector but also very useful (difficult to learn) information that should speed up learning
+        encoded_tricks,
+        seen_cards,
+        #card_prob_matrix.flatten(),  # Larger vector but also very useful (difficult to learn) information
         np.array(legal_one_hot)
     ])
 
