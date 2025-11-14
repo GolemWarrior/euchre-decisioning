@@ -5,7 +5,7 @@ from euchre.players import EPlayer, PLAYER_COUNT
 from euchre.round import PLAYING_STATE
 
 
-def get_card_prob_matrix(round, player):
+def get_card_prob_matrix(round, player=None):
     '''
     Return matrix representing the probability of a card being in each player's hand given only the
     move history, rules of the game, and the information known to the given player.
@@ -15,6 +15,8 @@ def get_card_prob_matrix(round, player):
 
     The returned matrix has DECK_SIZE rows that sum to 1 and four columns indexed by player index
     '''
+    if player == None:
+        player = round.current_player
 
     all_played_ecard_lists = round.past_played_ecard_lists.copy()
     all_played_ecard_lists.append(round.played_ecards)
