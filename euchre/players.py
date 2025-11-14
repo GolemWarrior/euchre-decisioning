@@ -1,6 +1,7 @@
 from enum import IntEnum
 
 PLAYERS = ["Player0_Team0", "Player1_Team1", "Player2_Team0", "Player3_Team1"]  # Order is important
+PLAYER_COUNT = len(PLAYERS)
 EPlayer = IntEnum('EPlayers', [(player, index) for index, player in enumerate(PLAYERS)])
 
 def get_teammate(eplayer):
