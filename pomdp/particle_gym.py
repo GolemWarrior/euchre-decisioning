@@ -43,7 +43,7 @@ def simulate_trick(pf, plays, my_hand, player_to_watch=1, rejuvenate_rate=0.05):
         # print_beliefs(pf, f"After rejuvenation", player_index=player_to_watch)
 
 def main():
-    pf = ParticleFilter(num_particles=2000)
+    pf = ParticleFilter(num_particles=20000)
     print("This is just the PF states for Player 1 (the one to the left of you)")
     # Our hand (Player 0)
     my_hand = {ECard.SPADES_9, ECard.CLUBS_JACK, ECard.HEARTS_KING,
@@ -59,6 +59,17 @@ def main():
 
     simulate_trick(pf, plays, my_hand=my_hand, player_to_watch=1, rejuvenate_rate=0.05)
     print("\nAll turns complete.")
+
+
+    valid_particles = [p for p in pf.particles if len(p.hands[1]) > 0]
+    print("Valid particles:", len(valid_particles))
+
+    if valid_particles:
+        rand_ws = np.random.choice(valid_particles)
+        for c in rand_ws.hands[1]:
+            print(c.name)
+    else:
+        print("No valid particles found!")
 
 if __name__ == "__main__":
     main()

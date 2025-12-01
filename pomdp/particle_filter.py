@@ -8,7 +8,7 @@ from euchre.deck import (
     get_ecard_esuit,
 )
 
-#TODO: Normalize all these configs in one place so we don't have drift.
+# TODO: Normalize all these configs in one place so we don't have drift.
 ALL_CARDS = list(ECard)
 NUM_PLAYERS = 4
 HAND_SIZE = 5
@@ -39,33 +39,53 @@ class ParticleFilter:
             ws.hands[2] = set(unseen[5:10])
             ws.hands[3] = set(unseen[10:15])
             ws.played_cards = set()
+            ws.trick = []
             ws.turn = 0
 
             self.particles.append(ws)
 
-    # Observation update: someone failed to follow suit (meaning an entire suite can be ruled out)
-    def observe_fail_follow(self, player: int, suit: ESuit): # type: ignore # <-- ESuit is not recognized properly
+    # Observation update: someone failed to follow suit
+    def observe_fail_follow(self, player: int, suit: ESuit):  # type: ignore
         for ws in self.particles:
             legal = ws.legal_cards(player)
             if any(get_ecard_esuit(c) == suit for c in legal):
-                ws.hands[player].clear()  # incompatible world state, will have a weight of 0 later
+                ws.hands[player].clear()  # impossible particle
+            else:
+                # Enforce hand size consistency
+                total_cards_played = len(ws.trick)
+                expected_hand_size = HAND_SIZE - (total_cards_played // NUM_PLAYERS)
+                if len(ws.hands[player]) > expected_hand_size:
+                    ws.hands[player] = set(random.sample(ws.hands[player], expected_hand_size))
 
-
-    # Observation update: exact play
+    # Observation update: exact card played
     def observe_play(self, player: int, card: ECard):
         for ws in self.particles:
-            # Remove the card from every player's hand if present
+            # Discard particle if the player doesn't have the card
+            if card not in ws.hands[player]:
+                ws.hands[player].clear()
+                continue
+
+            # Remove the card from all players
             for p in range(NUM_PLAYERS):
-                ws.hands[p].discard(card)  # discard is safe even if card not present
+                ws.hands[p].discard(card)
 
             # Update played cards and trick
             ws.played_cards.add(card)
             ws.trick.append((player, card))
+
+            # Enforce hand size consistency for all players
+            total_cards_played = len(ws.trick)
+            expected_hand_size = HAND_SIZE - (total_cards_played // NUM_PLAYERS)
+            for p in range(NUM_PLAYERS):
+                if len(ws.hands[p]) > expected_hand_size:
+                    ws.hands[p] = set(random.sample(ws.hands[p], expected_hand_size))
+
+            # Advance turn
             ws.turn = (player + 1) % NUM_PLAYERS
 
-
-    # Resampling --> Get rid of impossible worlds, and resample according to weights (all idx have equal probability)
+    # Resampling --> remove impossible particles and resample
     def resample(self):
+        # Only keep particles where our hand is valid
         weights = np.array([1 if ws.hands[0] else 0 for ws in self.particles], dtype=float)
         total = weights.sum()
         if total == 0:
