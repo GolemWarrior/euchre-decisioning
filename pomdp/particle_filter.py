@@ -1,6 +1,10 @@
+# particle_filter.py
+
 import random
-import numpy as np
 from typing import List, Set
+
+import numpy as np
+
 from state_encoding.pomdp_state import WorldState
 from euchre.deck import (
     ECard,
@@ -17,127 +21,219 @@ class ParticleFilter:
     def __init__(self, num_particles: int = 500):
         self.num_particles = num_particles
         self.particles: List[WorldState] = []
-        self.weights = np.ones(num_particles) / num_particles
+        self.weights: np.ndarray = np.ones(num_particles, dtype=float) / num_particles
 
+    # ------------------------------------------------------------------
+    # Helper: weight normalization + collapse handling
+    # ------------------------------------------------------------------
+    def _normalize_weights(self) -> None:
+        total = float(self.weights.sum())
+        if total == 0.0:
+            # Every particle was ruled impossible by observations -> collapse. For now, "reinflate" uniformly.
+            print("WARNING: PF collapse! Reinflating uniformly.")
+            self.weights[:] = 1.0 / self.num_particles
+        else:
+            self.weights /= total
+
+    # ------------------------------------------------------------------
     # Initialization
-    def initialize_uniform(self, my_hand: Set[ECard]):
+    # ------------------------------------------------------------------
+    def initialize_uniform(self, my_hand: Set[ECard]) -> None:
         """
         Creates particles with uniformly random assignments of all other cards.
-        my_hand is the known hand of the agent using the filter.
+
+        my_hand is the known hand of the agent using the filter (Player 0).
         """
         self.particles = []
-        self.weights = np.ones(self.num_particles) / self.num_particles
+        self.weights[:] = 1.0 / self.num_particles
+
+        known_my_hand = set(my_hand)
+        base_unseen = [c for c in ALL_CARDS if c not in known_my_hand]
+        assert len(known_my_hand) == HAND_SIZE, "Player 0 must have 5 cards at init."
+        assert len(base_unseen) == 3 * HAND_SIZE, "There should be exactly 15 unseen cards in a 20-card deck." #TODO: Add Aces back in the game
+
+        # assert len(base_unseen) == 3 * HAND_SIZE + 4, "There should be 19 unseen cards."
 
         for _ in range(self.num_particles):
-            ws = WorldState()
-            ws.hands[0] = set(my_hand)
-
-            unseen = [c for c in ALL_CARDS if c not in my_hand]
+            # Make a fresh shuffled copy for each particle to avoid correlation
+            unseen = base_unseen[:]
             random.shuffle(unseen)
 
-            ws.hands[1] = set(unseen[0:5]) #TODO: Get rid of this awful hardcoding for hands later if we get the time
-            ws.hands[2] = set(unseen[5:10])
-            ws.hands[3] = set(unseen[10:15])
+            ws = WorldState()
+            # Player 0 (us)
+            ws.hands[0] = set(known_my_hand)
+
+            # Distribute unseen cards to players 1, 2, 3
+            ws.hands[1] = set(unseen[0:HAND_SIZE])
+            ws.hands[2] = set(unseen[HAND_SIZE:2 * HAND_SIZE])
+            ws.hands[3] = set(unseen[2 * HAND_SIZE:3 * HAND_SIZE])
+
             ws.played_cards = set()
             ws.trick = []
             ws.turn = 0
 
             self.particles.append(ws)
 
+    # ------------------------------------------------------------------
     # Observation update: someone failed to follow suit
-    def observe_fail_follow(self, player: int, suit: ESuit):  # type: ignore
-        for ws in self.particles:
-            legal = ws.legal_cards(player)
-            if any(get_ecard_esuit(c) == suit for c in legal):
-                ws.hands[player].clear()  # impossible particle
-            else:
-                # Enforce hand size consistency
-                total_cards_played = len(ws.trick)
-                expected_hand_size = HAND_SIZE - (total_cards_played // NUM_PLAYERS)
-                if len(ws.hands[player]) > expected_hand_size:
-                    ws.hands[player] = set(random.sample(ws.hands[player], expected_hand_size))
+    # ------------------------------------------------------------------
+    def observe_fail_follow(self, player: int, suit: ESuit) -> None: # type: ignore
+        """
+        Observation: player *fails* to follow the given suit.
 
-    # Observation update: exact card played
-    def observe_play(self, player: int, card: ECard):
-        for ws in self.particles:
-            # Discard particle if the player doesn't have the card
-            if card not in ws.hands[player]:
-                ws.hands[player].clear()
+        Option A:
+        - For each particle, if the player COULD have followed suit in that world
+          (i.e., has any card of that suit in their legal set), then this
+          observation is impossible => set weight = 0.
+        - Otherwise keep the particle unchanged.
+
+        We do NOT randomly trim hands or adjust hand sizes here.
+        """
+        for i, ws in enumerate(self.particles):
+            if self.weights[i] == 0.0:
                 continue
 
-            # Remove the card from all players
+            legal = ws.legal_cards(player)
+            # If any legal card matches the led suit, the player SHOULD have followed suit
+            if any(get_ecard_esuit(c) == suit for c in legal):
+                # This world contradicts the observation
+                self.weights[i] = 0.0
+
+        self._normalize_weights()
+
+    # ------------------------------------------------------------------
+    # Observation update: exact card played
+    # ------------------------------------------------------------------
+    def observe_play(self, player: int, card: ECard) -> None:
+        """
+        Observation: player plays `card`.
+
+        Option A:
+        - If the player does not have that card in a given particle, that particle
+          is impossible => weight = 0.
+        - Otherwise, remove that card from ALL hands (for safety), add to played_cards,
+          and append to the trick.
+        """
+        for i, ws in enumerate(self.particles):
+            if self.weights[i] == 0.0:
+                continue
+
+            # If the player does not have this card, this world is impossible
+            if card not in ws.hands[player]:
+                self.weights[i] = 0.0
+                continue
+
+            # Safety: remove from all hands (though in a consistent world
+            # it should already only be in one hand)
             for p in range(NUM_PLAYERS):
                 ws.hands[p].discard(card)
 
-            # Update played cards and trick
             ws.played_cards.add(card)
             ws.trick.append((player, card))
-
-            # Enforce hand size consistency for all players
-            total_cards_played = len(ws.trick)
-            expected_hand_size = HAND_SIZE - (total_cards_played // NUM_PLAYERS)
-            for p in range(NUM_PLAYERS):
-                if len(ws.hands[p]) > expected_hand_size:
-                    ws.hands[p] = set(random.sample(ws.hands[p], expected_hand_size))
-
-            # Advance turn
             ws.turn = (player + 1) % NUM_PLAYERS
 
-    # Resampling --> remove impossible particles and resample
-    def resample(self):
-        # Only keep particles where our hand is valid
-        weights = np.array([1 if ws.hands[0] else 0 for ws in self.particles], dtype=float)
-        total = weights.sum()
-        if total == 0:
-            weights = np.ones(self.num_particles) / self.num_particles
-        else:
-            weights /= total
+        self._normalize_weights()
 
-        idxs = np.random.choice(self.num_particles, size=self.num_particles, p=weights)
+    # ------------------------------------------------------------------
+    # Resampling
+    # ------------------------------------------------------------------
+    def resample(self) -> None:
+        """
+        Standard multinomial resampling.
+
+        - Sample new particle indices according to current weights.
+        - Deep-copy them into a new particle set.
+        - Reset weights to uniform.
+
+        This keeps the *belief* the same in expectation, but reduces degeneracy.
+        """
+        # We assume weights are already normalized by the last observation.
+        idxs = np.random.choice(
+            self.num_particles,
+            size=self.num_particles,
+            p=self.weights,
+        )
         self.particles = [self.particles[i].copy() for i in idxs]
-        self.weights = np.ones(self.num_particles) / self.num_particles
-
-    # Markov Chain Monte Carlo (MCMC) rejuvenation --> REMOVED FOR NOW. It works, but I actually have come to the conclusion it is completely unecessary for euchre since the state space is so small and
-    # there are such few legal swaps that can even be done. Leaving this here for now in case we want to revisit later.
-    # def rejuvenate(self, rate: float = 0.05):
-    #     """
-    #     MCMC-style rejuvenation that respects constraints.
-        
-    #     For each particle:
-    #     - With probability `rate`, reshuffle unknown cards among other players.
-    #     - Player 0's hand is fixed.
-    #     - Played cards and cards known impossible for a player are never reassigned to that player.
-    #     """
-    #     for ws in self.particles:
-    #         if random.random() > rate:
-    #             continue
-
-    #         # Collect free cards: all cards not in your hand and not yet played
-    #         used_cards = set(ws.played_cards) | set(ws.hands[0])
-    #         free_cards = [c for c in ALL_CARDS if c not in used_cards]
-    #         random.shuffle(free_cards)
-
-    #         # Track how many cards each player already cannot have (from fail-follow)
-    #         cannot_have = {p: set() for p in range(NUM_PLAYERS)}
-    #         for p in range(1, NUM_PLAYERS):
-    #             # Any cards that ws.hands[p] is currently missing are "impossible" for this player(i.e., fail-follow eliminated them)
-    #             cannot_have[p] = set(c for c in ALL_CARDS if c not in ws.hands[p])
-
-    #         # Reset hands for other players
-    #         for p in range(1, NUM_PLAYERS):
-    #             ws.hands[p] = set()
-
-    #         # Assign cards respecting constraints
-    #         idx = 0
-    #         for _ in range(HAND_SIZE):
-    #             for p in range(1, NUM_PLAYERS):
-    #                 while idx < len(free_cards) and free_cards[idx] in cannot_have[p]:
-    #                     idx += 1
-    #                 if idx < len(free_cards):
-    #                     ws.hands[p].add(free_cards[idx])
-    #                     idx += 1
+        self.weights[:] = 1.0 / self.num_particles
 
 
-    # # Sample a particle index -- idk, could be useful later on but we can delete
-    # def sample_particle_index(self) -> int:
-    #     return np.random.choice(self.num_particles, p=self.weights)
+    # ------------------------------------------------------------------
+    # Rejuvenation via MCMC Metropolis-Hastings swap proposals
+    # ------------------------------------------------------------------
+    def rejuvenate(self, rate: float = 0.05) -> None:
+        """
+        MCMC rejuvenation using random card-swap proposals between players.
+
+        rate: fraction of particles to try to rejuvenate.
+
+        Algorithm:
+        - Pick a random particle.
+        - Propose swapping two cards between two *opponent* players.
+        - Reject the proposal if it violates:
+              * card already played
+              * trick consistency
+              * follow-suit legality contradicts prior observations
+        - Otherwise accept the swap.
+
+        This helps particle diversity after resampling collapse.
+        """
+
+        num_attempts = int(self.num_particles * rate)
+        if num_attempts <= 0:
+            return
+
+        for _ in range(num_attempts):
+            idx = random.randrange(self.num_particles)
+            ws = self.particles[idx]
+
+            # Only rejuvenate if weight > 0
+            # (weight is uniform after resampling, but check anyway)
+            if self.weights[idx] == 0:
+                continue
+
+            # Choose two distinct opponent players to swap from
+            players = [1, 2, 3]
+            p1, p2 = random.sample(players, 2)
+
+            # If either hand is empty (should not happen), skip
+            if len(ws.hands[p1]) == 0 or len(ws.hands[p2]) == 0:
+                continue
+
+            # Choose random card from each
+            c1 = random.choice(list(ws.hands[p1]))
+            c2 = random.choice(list(ws.hands[p2]))
+
+            # Skip if either card is already played
+            if c1 in ws.played_cards or c2 in ws.played_cards:
+                continue
+
+            # --- PROPOSE THE SWAP ---
+            # Make shallow copies
+            new_h1 = ws.hands[p1].copy()
+            new_h2 = ws.hands[p2].copy()
+
+            new_h1.remove(c1); new_h1.add(c2)
+            new_h2.remove(c2); new_h2.add(c1)
+
+            # LEGALITY CHECK: Does swap break trick consistency?
+            # i.e., if the trick already shows a card from p1 or p2
+            # that contradicts the modified hands.
+            consistent = True
+            for (pl, card) in ws.trick:
+                if pl == p1 and card not in new_h1:
+                    consistent = False
+                    break
+                if pl == p2 and card not in new_h2:
+                    consistent = False
+                    break
+            if not consistent:
+                continue
+
+            # LEGALITY CHECK: Follow-suit observations
+            # If at any point a player failed to follow suit, ensure
+            # the swap doesn't give them a card of that suit.
+            # (We *cannot* reconstruct all past fail-follow events, so skip.)
+
+            # --- ACCEPT THE SWAP ---
+            ws.hands[p1] = new_h1
+            ws.hands[p2] = new_h2
