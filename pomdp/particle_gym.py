@@ -4,11 +4,6 @@ import numpy as np
 
 NUM_PLAYERS = 4
 
-
-# ============================================================
-# Belief-printing utilities
-# ============================================================
-
 def print_beliefs_for_player(
     pf: ParticleFilter,
     player_index: int,
@@ -16,7 +11,7 @@ def print_beliefs_for_player(
     show_prob: bool = True,
 ) -> None:
     """
-    Print the belief over a single player's hand (using PARTICLE WEIGHTS).
+    Print the belief over a single player's hand using PARTICLE WEIGHTS.
     """
     counts = {card: 0.0 for card in ECard}
 
@@ -48,71 +43,97 @@ def print_all_beliefs(pf: ParticleFilter, label: str) -> None:
         print_beliefs_for_player(pf, player_index=player, top_n=15, show_prob=True)
 
 
-# ============================================================
-# Simulation loop with rejuvenation
-# ============================================================
+def count_unique_hands(pf: ParticleFilter, player_index: int) -> int:
+    """
+    How many distinct hand configurations does this player have
+    across all particles (as a diversity metric)?
+    """
+    hand_configs = set()
+    for ws in pf.particles:
+        # Sort by card enum value so sets are comparable
+        hand_configs.add(tuple(sorted(c.value for c in ws.hands[player_index])))
+    return len(hand_configs)
+
 
 def simulate_trick(
     pf: ParticleFilter,
     plays,
     my_hand,
     rejuvenate_rate: float = 0.05,
-    rejuvenate_turns: int = 2,
 ) -> None:
     """
     Simulate a trick with multiple moves.
 
     plays: list of tuples (player_index, card_played, fail_follow_suit_or_None)
-    rejuvenate_rate: probability of swapping a random unseen card
-    rejuvenate_turns: rejuvenate for this many initial turns (early phase)
     """
     pf.initialize_uniform(my_hand=my_hand)
     print_all_beliefs(pf, "Initial uniform distribution")
+    print(f"Initial ESS = {pf.effective_sample_size():.1f}")
+    for p in range(NUM_PLAYERS):
+        print(f"Initial unique hands for Player {p}: {count_unique_hands(pf, p)}")
 
     for turn, (player, card, fail_suit) in enumerate(plays, 1):
         print("\n========================")
         print(f" TURN {turn}: Player {player}")
         print("========================\n")
 
-        # -------------------------
-        # Fail-to-follow observation
-        # -------------------------
+        # Observe fail-to-follow if applicable
         if fail_suit is not None:
             pf.observe_fail_follow(player=player, suit=fail_suit)
             print_all_beliefs(
                 pf,
                 f"After observing Player {player} FAILS to follow {fail_suit.name}",
             )
+            print(f"ESS after fail-follow = {pf.effective_sample_size():.1f}")
 
-        # -------------------------
-        # Play observation
-        # -------------------------
+        # Observe actual play
         pf.observe_play(player=player, card=card)
+        print_all_beliefs(
+            pf,
+            f"After Player {player} PLAYS {card.name} (pre-resample)",
+        )
+        print(f"ESS before resample = {pf.effective_sample_size():.1f}")
+
+        # Resample
         pf.resample()
         print_all_beliefs(
             pf,
-            f"After Player {player} PLAYS {card.name}",
+            f"After Player {player} PLAYS {card.name} (post-resample)",
         )
+        ess_after_resample = pf.effective_sample_size()
+        print(f"ESS after resample = {ess_after_resample:.1f}")
 
-        # -------------------------
-        # OPTIONAL REJUVENATION
-        # -------------------------
-        if turn <= rejuvenate_turns:
+        # Diversity before rejuvenation
+        uniq_before = {
+            p: count_unique_hands(pf, p) for p in range(NUM_PLAYERS)
+        }
+
+        # Rejuvenation=
+        if rejuvenate_rate > 0.0:
             print("\n--- Running rejuvenation step ---")
-            before_ess = (1.0 / np.sum(pf.weights**2))
             pf.rejuvenate(rate=rejuvenate_rate)
-            after_ess = (1.0 / np.sum(pf.weights**2))
-            print(f"Rejuvenation complete. ESS before={before_ess:.1f}, after={after_ess:.1f}")
+            ess_after_rejuv = pf.effective_sample_size()
+            uniq_after = {
+                p: count_unique_hands(pf, p) for p in range(NUM_PLAYERS)
+            }
+            print(
+                f"Rejuvenation complete. ESS (before/after) = "
+                f"{ess_after_resample:.1f} / {ess_after_rejuv:.1f}"
+            )
+            for p in range(NUM_PLAYERS):
+                print(
+                    f"Player {p}: unique hands before/after rejuvenation = "
+                    f"{uniq_before[p]} / {uniq_after[p]}"
+                )
 
-    # ============================================================
-    # Summary after all turns
-    # ============================================================
     print("\nAll turns complete.")
 
+    # "Valid" now means weight > 0
     valid_indices = [i for i, w in enumerate(pf.weights) if w > 0.0]
     print("Valid particles (weight > 0):", len(valid_indices))
+
     print("\n=== Hand size summary across all particles ===")
-    for p in range(4):
+    for p in range(NUM_PLAYERS):
         sizes = [len(ws.hands[p]) for ws in pf.particles]
         unique_sizes = sorted(set(sizes))
         print(f"Player {p}: unique hand sizes = {unique_sizes}")
@@ -122,17 +143,14 @@ def simulate_trick(
         rand_ws = pf.particles[rand_idx]
         print("\nRandom valid particle:")
         for p in range(NUM_PLAYERS):
-            print(f"Player {p} hand:", [c.name for c in rand_ws.hands[p]])
+            hand_names = [c.name for c in rand_ws.hands[p]]
+            print(f"Player {p} hand: {sorted(hand_names)}")
     else:
         print("No valid particles found!")
 
 
-# ============================================================
-# Main entry point
-# ============================================================
-
 def main():
-    pf = ParticleFilter(num_particles=5000)
+    pf = ParticleFilter(num_particles=2000)
 
     # Our hand (Player 0)
     my_hand = {
@@ -145,19 +163,13 @@ def main():
 
     # Define a trick: (player_index, card_played, fail_follow_suit_or_None)
     plays = [
-        (1, ECard.CLUBS_10, ESuit.HEARTS),
-        (2, ECard.DIAMONDS_KING, None),
-        (3, ECard.SPADES_10, None),
-        (0, ECard.SPADES_9, None),
+        (1, ECard.CLUBS_10, ESuit.HEARTS),  # Player 1: fails to follow hearts, then plays CLUBS_10
+        (2, ECard.DIAMONDS_KING, None),     # Player 2: plays DIAMONDS_KING
+        (3, ECard.SPADES_10, None),         # Player 3: plays SPADES_10
+        (0, ECard.SPADES_9, None),          # Player 0: plays SPADES_9
     ]
 
-    simulate_trick(
-        pf,
-        plays,
-        my_hand=my_hand,
-        rejuvenate_rate=0.05,
-        rejuvenate_turns=2,
-    )
+    simulate_trick(pf, plays, my_hand=my_hand, rejuvenate_rate=0.05)
 
 
 if __name__ == "__main__":

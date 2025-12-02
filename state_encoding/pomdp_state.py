@@ -1,5 +1,3 @@
-# pomdp_state.py
-
 from typing import List, Dict, Set
 from copy import deepcopy
 
