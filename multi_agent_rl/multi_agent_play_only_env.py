@@ -10,12 +10,9 @@ from euchre.round import Round, PLAY_CARD_ACTIONS, PLAYING_STATE
 
 from state_encoding.multi_agent_play_only_rl import encode_state
 
+# Reward scales
 WIN_TRICK = 1
-LOSE_TRICK = -WIN_TRICK
-
 PER_WON_POINT = 10
-PER_LOST_POINT = -PER_WON_POINT
-
 ILLEGAL_MOVE = -1
 
 def do_bidding_phase(round):
@@ -107,14 +104,14 @@ class EuchreMultiAgentEnv(AECEnv):
         opposing_team_index = get_other_team_index(team_index)
 
         reward += (self.round.trick_wins[team_index] - before_trick_wins[team_index]) * WIN_TRICK
-        reward += (self.round.trick_wins[opposing_team_index] - before_trick_wins[opposing_team_index]) * LOSE_TRICK
+        reward += (self.round.trick_wins[opposing_team_index] - before_trick_wins[opposing_team_index]) * -1 * WIN_TRICK
 
         terminated = self.round.finished
         if terminated:
             round_points = self.round.round_points
             win_points = round_points[team_index]
             loss_points = round_points[opposing_team_index]
-            reward += win_points * PER_WON_POINT + loss_points * PER_LOST_POINT
+            reward += win_points * PER_WON_POINT + loss_points * -1 * PER_WON_POINT
         
         observations = {agent: self.observe(agent) for agent in self.agents}
         # Teammate shares rewards with agent, opponents get flipped rewards
