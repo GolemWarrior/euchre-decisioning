@@ -117,7 +117,9 @@ class EuchreMultiAgentEnv(AECEnv):
             reward += win_points * PER_WON_POINT + loss_points * PER_LOST_POINT
         
         observations = {agent: self.observe(agent) for agent in self.agents}
-        # Teammate shares rewards with agent
+        # Teammate shares rewards with agent, opponents get flipped rewards
+        for key in self.rewards.keys():
+            self.rewards[key] = -reward
         self.rewards[current_agent] = reward
         self.rewards[teammate_agent] = reward
         self.terminations = {agent: terminated for agent in self.agents}
