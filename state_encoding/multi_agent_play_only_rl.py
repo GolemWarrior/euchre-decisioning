@@ -39,6 +39,10 @@ def encode_seen(round):
     for i, action_record in enumerate([action_record for action_record in round.past_actions if action_record[2] == PLAYING_STATE]):
         action_player, action, action_estate, played_ecard = action_record
 
+        # Don't include the cards of the non-participating player
+        if round.going_alone and action_player == get_teammate(round.maker):
+            continue
+
         card_seen[played_ecard] = 1
     
     if round.dealer == round.current_player and round.discarded_card is not None:
@@ -113,6 +117,10 @@ def encode_trick_cards(round):
     for i, action_record in enumerate([action_record for action_record in round.past_actions if action_record[2] == PLAYING_STATE]):
         action_player, action, action_estate, played_ecard = action_record
 
+        # Don't include the cards of the non-participating player
+        if round.going_alone and action_player == get_teammate(round.maker):
+            continue
+
         if played_ecard in played_ecards:
             normalized_action_player = player_normalization_mapping[round.get_current_player()][action_player]
             trick_cards_encoding[normalized_action_player-1, int(played_ecard)] = 1
@@ -162,6 +170,10 @@ def encode_trumps_played(round):
     trump_count = 0
     for i, action_record in enumerate([action_record for action_record in round.past_actions if action_record[2] == PLAYING_STATE]):
         action_player, action, action_estate, played_ecard = action_record
+
+        # Don't include the cards of the non-participating player
+        if round.going_alone and action_player == get_teammate(round.maker):
+            continue
 
         if get_ecard_esuit(played_ecard) == round.trump_esuit:
             trump_count += 1
