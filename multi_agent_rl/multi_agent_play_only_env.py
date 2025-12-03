@@ -32,9 +32,11 @@ class EuchreMultiAgentEnv(AECEnv):
         self.agents = self.possible_agents.copy()
 
         self.action_spaces = {agent: spaces.Discrete(DECK_SIZE) for agent in self.agents}
-        self.observation_spaces = {agent: spaces.Box(
-            low=0.0, high=1.0, shape=(ENCODING_LENGTH,), dtype=np.float32
-        ) for agent in self.agents}
+        self.observation_spaces = {
+            agent: {
+                "observation":  spaces.Box(low=0.0, high=1.0, shape=(ENCODING_LENGTH,), dtype=np.float32),
+                "action_mask": spaces.Box(low=0, high=1, shape=(DECK_SIZE,), dtype=np.int8)
+            } for agent in self.agents}
 
     def observe(self, agent):
         player_index = PLAYERS.index(agent)
