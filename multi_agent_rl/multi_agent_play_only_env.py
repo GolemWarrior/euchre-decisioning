@@ -8,7 +8,7 @@ from euchre.players import PLAYERS, EPlayer, eplayer_to_team_index, get_other_te
 from euchre.deck import DECK_SIZE, ECard
 from euchre.round import Round, PLAY_CARD_ACTIONS, PLAYING_STATE
 
-from state_encoding.multi_agent_play_only_rl import encode_state
+from state_encoding.multi_agent_play_only_rl import encode_state, encode_playable
 
 # Reward scales
 WIN_TRICK = 1
@@ -39,12 +39,13 @@ class EuchreMultiAgentEnv(AECEnv):
             } for agent in self.agents}
 
     def observe(self, agent):
+
         player_index = PLAYERS.index(agent)
-        if self.round.get_current_player() == EPlayer(player_index):
-            return encode_state(self.round)
-        
-        # No observation when it's not the agent's turn. Should make an encoding that works for any agent if using a learning algorithm that uses this
-        return np.zeros(ENCODING_LENGTH)
+        eplayer = EPlayer(player_index)
+        return {
+            "observation": encode_state(self.round, agent_player=eplayer),
+            "action_mask": encode_playable(self.round, agent_player=eplayer)
+        }
 
     def reset(self, seed=None):
         self.round = Round()
@@ -100,6 +101,11 @@ class EuchreMultiAgentEnv(AECEnv):
         before_trick_wins = self.round.trick_wins.copy()
 
         self.round.take_action(action)
+
+        # Skip when the agent's teammate is going alone, since moves have no impact and there is nothing to learn
+        while not self.round.finished and self.round.going_alone and self.round.get_current_player() == get_teammate(self.round.maker):
+            self.round.take_action(random.choice(list(self.round.get_actions())))
+
         self.agent_selection = PLAYERS[int(self.round.get_current_player())]
 
         team_index = eplayer_to_team_index(self.round.get_current_player())
@@ -116,7 +122,7 @@ class EuchreMultiAgentEnv(AECEnv):
             reward += win_points * PER_WON_POINT + loss_points * -1 * PER_WON_POINT
         
         observations = {agent: self.observe(agent) for agent in self.agents}
-        # Teammate shares rewards with agent, opponents get flipped rewards
+        # Teammate shares rewards with agent, opponents get opposite rewards
         for key in self.rewards.keys():
             self.rewards[key] = -reward
         self.rewards[current_agent] = reward
