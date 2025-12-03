@@ -169,6 +169,16 @@ def encode_trumps_played(round):
     normalized_trump_count = trump_count / len(RANKS)
     return np.array([normalized_trump_count])
 
+def encode_is_going_alone(round):
+    going_alone = np.zeros(4)
+
+    for player_index in range(PLAYER_COUNT):
+        normalized_player = player_normalization_mapping[int(round.current_player)][player_index]
+        if normalized_player == round.maker and round.going_alone:
+            going_alone[int(normalized_player)] = 1
+    
+    return going_alone
+
 # Combined encoding:
 def encode_state(round):
     assert round.estate == PLAYING_STATE, "Play only encoding can't be done outside of playing phase!"
@@ -184,5 +194,6 @@ def encode_state(round):
         encode_led_suit(round),
         encode_trick_wins(round),
         encode_hand_sizes(round),
-        encode_trumps_played(round)
+        encode_trumps_played(round),
+        encode_is_going_alone(round)
     ])
