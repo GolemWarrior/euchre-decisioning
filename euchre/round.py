@@ -18,7 +18,7 @@ CHOOSING_ESUIT_STATE =       RoundEState["CHOOSING_ESUIT"]
 PLAYING_STATE =              RoundEState["PLAYING"]
 
 
-ACTIONS = ["PLAY_CARD_1", "PLAY_CARD_2", "PLAY_CARD_3", "PLAY_CARD_4",
+ACTIONS = ["PLAY_CARD_1", "PLAY_CARD_2", "PLAY_CARD_3", "PLAY_CARD_4", "PLAY_CARD_5",
            "ORDER_UP", "PASS",
            "GO_ALONE", "DONT_GO_ALONE",
            "CHOOSE_SPADES", "CHOOSE_CLUBS", "CHOOSE_HEARTS", "CHOOSE_DIAMONDS"
@@ -28,6 +28,7 @@ PLAY_CARD_1 =     EAction["PLAY_CARD_1"]
 PLAY_CARD_2 =     EAction["PLAY_CARD_2"]
 PLAY_CARD_3 =     EAction["PLAY_CARD_3"]
 PLAY_CARD_4 =     EAction["PLAY_CARD_4"]
+PLAY_CARD_5 =     EAction["PLAY_CARD_5"]
 ORDER_UP =        EAction["ORDER_UP"]
 PASS =            EAction["PASS"]
 GO_ALONE =        EAction["GO_ALONE"]
@@ -37,7 +38,7 @@ CHOOSE_CLUBS =    EAction["CHOOSE_CLUBS"]
 CHOOSE_HEARTS =   EAction["CHOOSE_HEARTS"]
 CHOOSE_DIAMONDS = EAction["CHOOSE_DIAMONDS"]
 
-PLAY_CARD_ACTIONS = [PLAY_CARD_1, PLAY_CARD_2, PLAY_CARD_3, PLAY_CARD_4]
+PLAY_CARD_ACTIONS = [PLAY_CARD_1, PLAY_CARD_2, PLAY_CARD_3, PLAY_CARD_4, PLAY_CARD_5]
 
 
 suit_choice_action_to_esuit_map = {
@@ -62,7 +63,7 @@ class Round:
 
         self.current_player = get_clockwise_player(self.dealer)
 
-        self.hands = [list([ECard(npint) for npint in array]) for array in np.array_split(self.deck.draw_ecards(16), 4)]
+        self.hands = [list([ECard(npint) for npint in array]) for array in np.array_split(self.deck.draw_ecards(20), 4)]
         self.original_hands = copy.deepcopy(self.hands)
 
         self.upcard = ECard(self.deck.draw_ecards(1)[0])
