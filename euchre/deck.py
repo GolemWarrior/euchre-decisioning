@@ -4,7 +4,7 @@ from itertools import product
 
 # Define IntEnums for each card, each suit, and each rank used in Euchre
 SUITS = ["SPADES", "CLUBS", "HEARTS", "DIAMONDS"]  # Order is important for binary operations
-RANKS = ["9", "10", "JACK", "QUEEN", "KING"]  # Order is important for int operations
+RANKS = ["9", "10", "JACK", "QUEEN", "KING", "ACE"]  # Order is important for int operations
 card_enum_strings = [(suit + "_" + rank, index) for index, (suit, rank) in enumerate(product(SUITS, RANKS))]
 DECK_SIZE = len(card_enum_strings)
 ECard = IntEnum('ECard', card_enum_strings)
