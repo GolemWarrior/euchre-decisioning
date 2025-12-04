@@ -39,7 +39,6 @@ class EuchreMultiAgentEnv(AECEnv):
             } for agent in self.agents}
 
     def observe(self, agent):
-
         player_index = PLAYERS.index(agent)
         eplayer = EPlayer(player_index)
         return {
@@ -48,6 +47,7 @@ class EuchreMultiAgentEnv(AECEnv):
         }
 
     def reset(self, seed=None):
+        # Reset the round to one after the bidding phase
         self.round = Round()
         do_bidding_phase(self.round)
 
@@ -68,9 +68,8 @@ class EuchreMultiAgentEnv(AECEnv):
             self._was_done_step(action)
             return
 
+        # Interface returns
         self.rewards = {agent: 0 for agent in self.agents}
-
-        reward = 0
         info = {}
         truncated = False
         terminated = False
@@ -80,8 +79,11 @@ class EuchreMultiAgentEnv(AECEnv):
 
         ecard_played = ECard(int(action))
 
+        # Get data about current player
         current_player = self.round.get_current_player()
         player_hand = self.round.hands[current_player]
+        team_index = eplayer_to_team_index(current_player)
+        opposing_team_index = get_other_team_index(team_index)
 
         # If the action is illegal, punish the agent and let it try again (don't change the state)
         if ecard_played not in player_hand:
@@ -106,11 +108,11 @@ class EuchreMultiAgentEnv(AECEnv):
         while not self.round.finished and self.round.going_alone and self.round.get_current_player() == get_teammate(self.round.maker):
             self.round.take_action(random.choice(list(self.round.get_actions())))
 
+        # Update the next agent
         self.agent_selection = PLAYERS[int(self.round.get_current_player())]
 
-        team_index = eplayer_to_team_index(current_player)
-        opposing_team_index = get_other_team_index(team_index)
-
+        # Determine resulting rewards and termination
+        reward = 0
         reward += (self.round.trick_wins[team_index] - before_trick_wins[team_index]) * WIN_TRICK
         reward += (self.round.trick_wins[opposing_team_index] - before_trick_wins[opposing_team_index]) * -1 * WIN_TRICK
 
@@ -121,6 +123,7 @@ class EuchreMultiAgentEnv(AECEnv):
             loss_points = round_points[opposing_team_index]
             reward += win_points * PER_WON_POINT + loss_points * -1 * PER_WON_POINT
         
+        # Return the results
         observations = {agent: self.observe(agent) for agent in self.agents}
         # Teammate shares rewards with agent, opponents get opposite rewards
         for key in self.rewards.keys():
