@@ -6,7 +6,7 @@ import copy
 from .deck import ESuit, ECard, Deck, get_ecard_esuit, get_ecard_erank, get_same_color_esuit, get_ecard_score, JACK
 from .players import EPlayer, get_clockwise_player, eplayer_to_team_index, get_other_team_index, get_teammate
 
-TRICK_COUNT = 4
+TRICK_COUNT = 5
 
 ROUND_STATES = ["FIRST_BIDDING", "DEALER_DISCARD", "DECIDING_GOING_ALONE", "SECOND_BIDDING", "CHOOSING_ESUIT", "PLAYING"]
 RoundEState = IntEnum("RoundEState", [(round_state, index) for index, round_state in enumerate(ROUND_STATES)])

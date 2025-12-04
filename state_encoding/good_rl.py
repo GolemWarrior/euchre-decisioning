@@ -63,7 +63,7 @@ def create_card(ecard, upcard, trump_esuit=None):
         normalized_rank = erank / (len(RANKS) - 1)
         
         if trump_esuit is not None:
-            if esuit == JACK:
+            if erank == JACK:
                 if esuit == trump_esuit:
                     is_right_bower = 1
                 elif esuit == get_same_color_esuit(trump_esuit):
@@ -152,6 +152,11 @@ def encode_tricks(round):
         played_ecards = [create_card(None, round.upcard, trump_esuit=round.trump_esuit) for i in range(PLAYER_COUNT)]
         for action_record in trick_action_records:
             action_player, action, action_estate, played_ecard = action_record
+
+            # Ignore the teammate of any player going alone
+            if round.going_alone and get_teammate(round.maker) == action_player:
+                continue
+
             normalized_action_player = player_normalization_mapping[player][action_player]
 
             played_ecards[normalized_action_player] = create_card(played_ecard, round.upcard, trump_esuit=round.trump_esuit)
@@ -172,6 +177,10 @@ def encode_seen_cards(round):
     card_seen = [0] * DECK_SIZE
     for i, action_record in enumerate([action_record for action_record in round.past_actions if action_record[2] == PLAYING_STATE]):
         action_player, action, action_estate, played_ecard = action_record
+
+        # Ignore the teammate of any player going alone
+        if round.going_alone and get_teammate(round.maker) == action_player:
+            continue
 
         card_seen[played_ecard] = 1
     

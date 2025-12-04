@@ -61,16 +61,18 @@ class EuchreEnvironment(gym.Env):
         assert self.round.current_player == self.player, "Agent should only make moves for themselves!"
 
         reward = 0
+        terminated = False
+        truncated = False
+        info = {}
+
         round_action = EAction(int(action))
         legal_actions = self.round.get_actions()
 
         if EAction(round_action) not in legal_actions:
             reward += ILLEGAL_MOVE
-            # Instead of taking a random action,
+            # Instead of taking a random action:
             #round_action = random.choice(list(legal_actions))
             # Give the agent a negative reward and leave it in the same state to decide again
-            info = {}
-            truncated = False
             return self.state, reward, terminated, truncated, info
 
         before_trick_wins = self.round.trick_wins.copy()
@@ -93,7 +95,5 @@ class EuchreEnvironment(gym.Env):
             loss_points = round_points[opposing_team_index]
             reward += win_points * PER_WON_POINT + loss_points * PER_LOST_POINT
         
-        info = {}
-        truncated = False
         return self.state, reward, terminated, truncated, info
 
