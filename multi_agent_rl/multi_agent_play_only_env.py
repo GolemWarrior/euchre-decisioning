@@ -1,134 +1,137 @@
-import numpy as np
 import random
+from typing import Tuple, Dict, Any
 
-from pettingzoo import AECEnv
+import numpy as np
+import gymnasium as gym
 from gymnasium import spaces
 
-from euchre.players import PLAYERS, EPlayer, eplayer_to_team_index, get_other_team_index, get_teammate
-from euchre.deck import DECK_SIZE, ECard
-from euchre.round import Round, PLAY_CARD_ACTIONS, PLAYING_STATE
+from euchre.round import Round, EAction
+from euchre.players import EPlayer, eplayer_to_team_index, get_other_team_index
+from euchre.deck import DECK_SIZE
+from state_encoding.multi_agent_play_only_rl import (
+    encode_state,
+    encode_playable,
+    NUM_ACTIONS,
+)
 
-from state_encoding.multi_agent_play_only_rl import encode_state, encode_playable
+# Reward scales – tweak if you like
+WIN_TRICK = 1          # (optional – not used in this minimal version)
+PER_WON_POINT = 10     # per round point (win/loss)
+ILLEGAL_MOVE = -1.0    # penalty for illegal move
 
-# Reward scales
-WIN_TRICK = 1
-PER_WON_POINT = 10
-ILLEGAL_MOVE = -1
 
-def do_bidding_phase(round):
-    while round.estate != PLAYING_STATE:
-        round.take_action(random.choice(list(round.get_actions())))
+class EuchreSelfPlayEnv(gym.Env):
+    """
+    Single-agent environment where ONE shared policy controls all four seats.
 
-test_round = Round()
-do_bidding_phase(test_round)
-ENCODING_LENGTH = len(encode_state(test_round))
+    On each call to step(action):
+      - We figure out whose turn it is from Round
+      - Interpret `action` as an EAction index
+      - If illegal, give ILLEGAL_MOVE and replace with random legal action
+      - Apply the action via Round.take_action
+      - If the round ends, give reward from the perspective of the SEAT that just acted
 
-class EuchreMultiAgentEnv(AECEnv):
+    This is standard parameter-sharing self-play.
+    """
+
+    metadata = {"render_modes": []}
+
     def __init__(self):
         super().__init__()
 
-        self.possible_agents = PLAYERS.copy()
+        # Build a dummy round just to infer obs_dim
+        dummy_round = Round()
+        dummy_player = dummy_round.get_current_player()
+        dummy_obs = encode_state(dummy_round, dummy_player)
 
-        self.agents = self.possible_agents.copy()
+        self.observation_space = spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=dummy_obs.shape,
+            dtype=np.float32,
+        )
+        self.action_space = spaces.Discrete(NUM_ACTIONS)
 
-        self.action_spaces = {agent: spaces.Discrete(DECK_SIZE) for agent in self.agents}
-        self.observation_spaces = {
-            agent: {
-                "observation":  spaces.Box(low=0.0, high=1.0, shape=(ENCODING_LENGTH,), dtype=np.float32),
-                "action_mask": spaces.Box(low=0, high=1, shape=(DECK_SIZE,), dtype=np.int8)
-            } for agent in self.agents}
+        self.round: Round | None = None
+        self.current_player: EPlayer | None = None
+        self.last_action_mask: np.ndarray | None = None
 
-    def observe(self, agent):
+    def _get_obs_and_mask(self) -> Tuple[np.ndarray, np.ndarray]:
+        assert self.round is not None
+        eplayer = self.round.get_current_player()
+        obs = encode_state(self.round, eplayer)
+        mask = encode_playable(self.round, eplayer)
+        return obs.astype(np.float32), mask.astype(np.float32)
 
-        player_index = PLAYERS.index(agent)
-        eplayer = EPlayer(player_index)
-        return {
-            "observation": encode_state(self.round, agent_player=eplayer),
-            "action_mask": encode_playable(self.round, agent_player=eplayer)
-        }
-
-    def reset(self, seed=None):
+    def reset(self, *, seed: int | None = None, options: Dict[str, Any] | None = None):
+        super().reset(seed=seed)
         self.round = Round()
-        do_bidding_phase(self.round)
+        self.current_player = self.round.get_current_player()
+        obs, mask = self._get_obs_and_mask()
+        self.last_action_mask = mask
+        info = {"action_mask": mask}
+        return obs, info
 
-        # Interface Stuff
-        self.agent_selection = PLAYERS[int(self.round.get_current_player())]
-        self.rewards = {agent: 0.0 for agent in self.agents}
-        self.terminations = {agent: False for agent in self.agents}
-        self.truncations = {agent: False for agent in self.agents}
-        self.infos = {agent: {} for agent in self.agents}
+    def step(self, action: int):
+        assert self.round is not None, "Call reset() before step()."
 
-        observations = {agent: self.observe(agent) for agent in self.agents}
-        infos = {agent: {} for agent in self.agents}
-        return observations, infos
+        # Who is acting now?
+        acting_player: EPlayer = self.round.get_current_player()
 
-    def step(self, action):
-        # Interface Stuff (step is called even when an agent is finished)
-        if self.terminations[self.agent_selection] or self.truncations[self.agent_selection]:
-            self._was_done_step(action)
-            return
+        # Interpret action as EAction
+        try:
+            round_action = EAction(action)
+        except ValueError:
+            # Completely invalid index
+            round_action = None
 
-        self.rewards = {agent: 0 for agent in self.agents}
-
-        reward = 0
-        info = {}
-        truncated = False
+        reward = 0.0
         terminated = False
+        truncated = False
+        info: Dict[str, Any] = {}
 
-        current_agent = self.agent_selection
-        teammate_agent = PLAYERS[get_teammate(self.round.get_current_player())]
+        legal_actions = self.round.get_actions()
 
-        ecard_played = ECard(int(action))
+        # Illegal move handling: penalize and fall back to a random legal action
+        if round_action not in legal_actions:
+            reward += ILLEGAL_MOVE
+            round_action = random.choice(list(legal_actions))
 
-        current_player = self.round.get_current_player()
-        player_hand = self.round.hands[current_player]
+        # Apply action
+        self.round.take_action(round_action)
 
-        # If the action is illegal, punish the agent and let it try again (don't change the state)
-        if ecard_played not in player_hand:
-            # Only the agent that makes the illegal move is punished
-            self.rewards[current_agent] += ILLEGAL_MOVE
+        # Round finished?
+        if self.round.finished:
+            terminated = True
+            # Reward is from the perspective of the team of the acting player
+            round_points = self.round.round_points  # [team0_points, team1_points]
+            team_idx = eplayer_to_team_index(acting_player)
+            opp_idx = get_other_team_index(team_idx)
 
-            observations = {agent: self.observe(agent) for agent in self.agents}
-            self.terminations = {agent: terminated for agent in self.agents}
-            self.truncations = {agent: truncated for agent in self.agents}
-            infos = {agent: info for agent in self.agents}
+            win_points = round_points[team_idx]
+            loss_points = round_points[opp_idx]
 
-            return observations, self.rewards, self.terminations, self.truncations, infos
-        
-        hand_index = player_hand.index(ecard_played)
-        action = PLAY_CARD_ACTIONS[hand_index]
+            # Positive if this player's team did better, negative otherwise
+            reward += (win_points - loss_points) * PER_WON_POINT
 
-        before_trick_wins = self.round.trick_wins.copy()
+            # No further actions – we can just keep obs/mask zeros
+            obs = np.zeros(self.observation_space.shape, dtype=np.float32)
+            mask = np.zeros(NUM_ACTIONS, dtype=np.float32)
+            info["action_mask"] = mask
+            self.last_action_mask = mask
+            return obs, float(reward), terminated, truncated, info
 
-        self.round.take_action(action)
+        # Otherwise, continue the round; next player will act next step
+        self.current_player = self.round.get_current_player()
+        obs, mask = self._get_obs_and_mask()
+        info["action_mask"] = mask
+        self.last_action_mask = mask
 
-        # Skip when the agent's teammate is going alone, since moves have no impact and there is nothing to learn
-        while not self.round.finished and self.round.going_alone and self.round.get_current_player() == get_teammate(self.round.maker):
-            self.round.take_action(random.choice(list(self.round.get_actions())))
+        return obs, float(reward), terminated, truncated, info
 
-        self.agent_selection = PLAYERS[int(self.round.get_current_player())]
+    def render(self):
+        # You can add a textual debug renderer if you want
+        pass
 
-        team_index = eplayer_to_team_index(self.round.get_current_player())
-        opposing_team_index = get_other_team_index(team_index)
-
-        reward += (self.round.trick_wins[team_index] - before_trick_wins[team_index]) * WIN_TRICK
-        reward += (self.round.trick_wins[opposing_team_index] - before_trick_wins[opposing_team_index]) * -1 * WIN_TRICK
-
-        terminated = self.round.finished
-        if terminated:
-            round_points = self.round.round_points
-            win_points = round_points[team_index]
-            loss_points = round_points[opposing_team_index]
-            reward += win_points * PER_WON_POINT + loss_points * -1 * PER_WON_POINT
-        
-        observations = {agent: self.observe(agent) for agent in self.agents}
-        # Teammate shares rewards with agent, opponents get opposite rewards
-        for key in self.rewards.keys():
-            self.rewards[key] = -reward
-        self.rewards[current_agent] = reward
-        self.rewards[teammate_agent] = reward
-        self.terminations = {agent: terminated for agent in self.agents}
-        self.truncations = {agent: truncated for agent in self.agents}
-        infos = {agent: info for agent in self.agents}
-
-        return observations, self.rewards, self.terminations, self.truncations, infos
+    def close(self):
+        pass
