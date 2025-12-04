@@ -108,7 +108,7 @@ class EuchreMultiAgentEnv(AECEnv):
 
         self.agent_selection = PLAYERS[int(self.round.get_current_player())]
 
-        team_index = eplayer_to_team_index(self.round.get_current_player())
+        team_index = eplayer_to_team_index(current_player)
         opposing_team_index = get_other_team_index(team_index)
 
         reward += (self.round.trick_wins[team_index] - before_trick_wins[team_index]) * WIN_TRICK
