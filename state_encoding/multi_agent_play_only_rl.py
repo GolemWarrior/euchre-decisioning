@@ -83,7 +83,7 @@ def encode_win_if_played(round):
     win_if_played_encoding = np.zeros(DECK_SIZE)
     for i in range(DECK_SIZE):
         ecard = ECard(i)
-        ecard_score = get_ecard_score(ecard, round.trump_esuit, get_ecard_esuit(played_ecards[0]))
+        ecard_score = 1 if len(played_ecards) == 0 else get_ecard_score(ecard, round.trump_esuit, get_ecard_esuit(played_ecards[0]))
         if ecard_score > max_score:
             win_if_played_encoding[i] = 1
     
@@ -170,7 +170,7 @@ def encode_hand_sizes(round, agent_player=None):
         hand_count = MAX_HAND_SIZE
         for card in hand:
             if card is None:
-                card -= 1
+                hand_count -= 1
 
         normalized_player_index = player_normalization_mapping[int(agent_player)][player_index]
         hand_sizes_encoding[normalized_player_index] = hand_count / MAX_HAND_SIZE
