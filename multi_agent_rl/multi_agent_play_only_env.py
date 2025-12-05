@@ -16,11 +16,20 @@ PER_WON_POINT = 10
 ILLEGAL_MOVE = -1
 
 def do_bidding_phase(round):
-    while round.estate != PLAYING_STATE:
+    while not round.finished and round.estate != PLAYING_STATE:
         round.take_action(random.choice(list(round.get_actions())))
 
+# test_round = Round()
+# do_bidding_phase(test_round)
+# ENCODING_LENGTH = len(encode_state(test_round))
 test_round = Round()
 do_bidding_phase(test_round)
+
+# Play 1 legal card so that played_ecards[0] exists
+first_actions = list(test_round.get_actions())
+if len(first_actions) > 0:
+    test_round.take_action(first_actions[0])
+
 ENCODING_LENGTH = len(encode_state(test_round))
 
 class EuchreMultiAgentEnv(AECEnv):
@@ -50,26 +59,34 @@ class EuchreMultiAgentEnv(AECEnv):
         # Reset the round to one after the bidding phase
         self.round = Round()
         do_bidding_phase(self.round)
+        while self.round.finished:
+            self.round = Round()
+            do_bidding_phase(self.round)
 
         # Interface Stuff
+        self.agents = self.possible_agents.copy()
         self.agent_selection = PLAYERS[int(self.round.get_current_player())]
-        self.rewards = {agent: 0.0 for agent in self.agents}
-        self.terminations = {agent: False for agent in self.agents}
-        self.truncations = {agent: False for agent in self.agents}
-        self.infos = {agent: {} for agent in self.agents}
+        self.rewards = {agent: 0.0 for agent in self.possible_agents}
+        self._cumulative_rewards  = {agent: 0.0 for agent in self.possible_agents}
+        self.terminations = {agent: False for agent in self.possible_agents}
+        self.truncations = {agent: False for agent in self.possible_agents}
+        self.infos = {agent: {} for agent in self.possible_agents}
 
-        observations = {agent: self.observe(agent) for agent in self.agents}
-        infos = {agent: {} for agent in self.agents}
+        observations = {agent: self.observe(agent) for agent in self.possible_agents}
+        infos = {agent: {} for agent in self.possible_agents}
         return observations, infos
 
     def step(self, action):
         # Interface Stuff (step is called even when an agent is finished)
-        if self.terminations[self.agent_selection] or self.truncations[self.agent_selection]:
-            self._was_done_step(action)
-            return
+        if self.terminations.get(self.agent_selection, False) or self.truncations.get(self.agent_selection, False):
+            self._was_dead_step(None)
+            observations = {agent: self.observe(agent) for agent in self.possible_agents}
+            self.rewards = {agent: 0 for agent in self.possible_agents}
+            infos = {agent: {} for agent in self.possible_agents}
+            return observations, self.rewards, self.terminations, self.truncations, infos
 
         # Interface returns
-        self.rewards = {agent: 0 for agent in self.agents}
+        self.rewards = {agent: 0 for agent in self.possible_agents}
         info = {}
         truncated = False
         terminated = False
@@ -87,18 +104,33 @@ class EuchreMultiAgentEnv(AECEnv):
 
         # If the action is illegal, punish the agent and let it try again (don't change the state)
         if ecard_played not in player_hand:
+            #print("Illegal action!!")
+
             # Only the agent that makes the illegal move is punished
             self.rewards[current_agent] += ILLEGAL_MOVE
 
-            observations = {agent: self.observe(agent) for agent in self.agents}
-            self.terminations = {agent: terminated for agent in self.agents}
-            self.truncations = {agent: truncated for agent in self.agents}
-            infos = {agent: info for agent in self.agents}
+            observations = {agent: self.observe(agent) for agent in self.possible_agents}
+            self.terminations = {agent: terminated for agent in self.possible_agents}
+            self.truncations = {agent: truncated for agent in self.possible_agents}
+            infos = {agent: info for agent in self.possible_agents}
 
             return observations, self.rewards, self.terminations, self.truncations, infos
-        
+
         hand_index = player_hand.index(ecard_played)
         action = PLAY_CARD_ACTIONS[hand_index]
+
+        if action not in self.round.get_actions():
+            #print("Illegal action!!")
+
+            # Only the agent that makes the illegal move is punished
+            self.rewards[current_agent] += ILLEGAL_MOVE
+
+            observations = {agent: self.observe(agent) for agent in self.possible_agents}
+            self.terminations = {agent: terminated for agent in self.possible_agents}
+            self.truncations = {agent: truncated for agent in self.possible_agents}
+            infos = {agent: info for agent in self.possible_agents}
+
+            return observations, self.rewards, self.terminations, self.truncations, infos
 
         before_trick_wins = self.round.trick_wins.copy()
 
@@ -122,16 +154,16 @@ class EuchreMultiAgentEnv(AECEnv):
             win_points = round_points[team_index]
             loss_points = round_points[opposing_team_index]
             reward += win_points * PER_WON_POINT + loss_points * -1 * PER_WON_POINT
-        
+
         # Return the results
-        observations = {agent: self.observe(agent) for agent in self.agents}
+        observations = {agent: self.observe(agent) for agent in self.possible_agents}
         # Teammate shares rewards with agent, opponents get opposite rewards
         for key in self.rewards.keys():
             self.rewards[key] = -reward
         self.rewards[current_agent] = reward
         self.rewards[teammate_agent] = reward
-        self.terminations = {agent: terminated for agent in self.agents}
-        self.truncations = {agent: truncated for agent in self.agents}
-        infos = {agent: info for agent in self.agents}
+        self.terminations = {agent: terminated for agent in self.possible_agents}
+        self.truncations = {agent: truncated for agent in self.possible_agents}
+        infos = {agent: info for agent in self.possible_agents}
 
         return observations, self.rewards, self.terminations, self.truncations, infos

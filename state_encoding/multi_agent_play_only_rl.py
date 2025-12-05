@@ -75,15 +75,21 @@ def encode_playable(round, agent_player=None):
 def encode_win_if_played(round):
     played_ecards = round.played_ecards
 
+    # If no one has led yet, this feature is undefined — just return zeros
+    if len(played_ecards) == 0 or round.trump_esuit is None:
+        return np.zeros(DECK_SIZE)
+
+    led_suit = get_ecard_esuit(played_ecards[0])
+
     max_score = 0
     for ecard in played_ecards:
-        score = get_ecard_score(ecard, round.trump_esuit, get_ecard_esuit(played_ecards[0]))
+        score = get_ecard_score(ecard, round.trump_esuit, led_suit)
         max_score = max(score, max_score)
     
     win_if_played_encoding = np.zeros(DECK_SIZE)
     for i in range(DECK_SIZE):
         ecard = ECard(i)
-        ecard_score = get_ecard_score(ecard, round.trump_esuit, get_ecard_esuit(played_ecards[0]))
+        ecard_score = get_ecard_score(ecard, round.trump_esuit, led_suit)
         if ecard_score > max_score:
             win_if_played_encoding[i] = 1
     
@@ -98,16 +104,27 @@ for trump_index in range(len(SUITS)):
 
         for card_index in range(DECK_SIZE):
             ecard = ECard(card_index)
-            MAX_CARD_SCORE = max(MAX_CARD_SCORE, get_ecard_score(ecard, trump_esuit, led_esuit))
-
+            MAX_CARD_SCORE = max(
+                MAX_CARD_SCORE,
+                get_ecard_score(ecard, trump_esuit, led_esuit)
+            )
 def encode_strength(round):
     strength_encoding = np.zeros(DECK_SIZE)
 
+    # Use the actual trump suit if available (always available in PLAYING_STATE)
+    trump = round.trump_esuit if round.trump_esuit is not None else ESuit(0)
+
+    # Determine the led suit if the trick has started
+    if len(round.played_ecards) > 0:
+        led = get_ecard_esuit(round.played_ecards[0])
+    else:
+        # No cards played yet in this trick → fallback to trump
+        led = trump
+
     for card_index in range(DECK_SIZE):
         ecard = ECard(card_index)
-        card_score = get_ecard_score(ecard, trump_esuit, led_esuit)
-        normalized_card_score = card_score / MAX_CARD_SCORE
-        strength_encoding[card_index] = normalized_card_score
+        card_score = get_ecard_score(ecard, trump, led)
+        strength_encoding[card_index] = card_score / MAX_CARD_SCORE
 
     return strength_encoding
 
@@ -167,11 +184,11 @@ def encode_hand_sizes(round, agent_player=None):
 
     for player_index in range(PLAYER_COUNT):
         hand = round.hands[player_index]
-        hand_count = MAX_HAND_SIZE
-        for card in hand:
-            if card is None:
-                card -= 1
 
+        # Count how many cards remain
+        hand_count = sum(1 for c in hand if c is not None)
+
+        # Normalize
         normalized_player_index = player_normalization_mapping[int(agent_player)][player_index]
         hand_sizes_encoding[normalized_player_index] = hand_count / MAX_HAND_SIZE
 
