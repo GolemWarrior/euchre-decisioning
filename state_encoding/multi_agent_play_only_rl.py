@@ -1,224 +1,168 @@
-# multi_agent_play_only_rl.py
+# ============================================================
+# multi_agent_play_only_rl.py  (FINAL SIMPLIFIED VERSION)
+# ============================================================
 
 import numpy as np
 from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
+import torch.optim as optim
 from torch.distributions import Categorical
-
-# Adjust these imports depending on your package layout
-from euchre.deck import DECK_SIZE, ESuit
-from euchre.round import EAction, RoundEState, ROUND_STATES
-from euchre.players import EPlayer, eplayer_to_team_index, get_other_team_index, PLAYER_COUNT
+from euchre.deck import DECK_SIZE
+from euchre.round import PLAY_CARD_ACTIONS
+from euchre.players import EPlayer
 
 
-# =========================
-#   STATE ENCODING
-# =========================
+# ============================================================
+# CONFIG
+# ============================================================
 
-NUM_ACTIONS = len(EAction.__members__)          # All possible actions
-NUM_STATES = len(ROUND_STATES)                  # FIRST_BIDDING, ..., PLAYING
-NUM_SUITS = len(ESuit.__members__)
+NUM_ACTIONS = len(PLAY_CARD_ACTIONS)  # should be 5
 
 
-def _one_hot(index: int, size: int) -> np.ndarray:
-    v = np.zeros(size, dtype=np.float32)
-    if 0 <= index < size:
-        v[index] = 1.0
-    return v
+# ============================================================
+# STATE ENCODING
+# ============================================================
 
-
-def encode_in_hand(round_obj, agent_player: EPlayer) -> np.ndarray:
+def encode_playable(round_obj, player: EPlayer) -> np.ndarray:
     """
-    One-hot over cards the agent currently holds.
-    Shape: (DECK_SIZE,)
-    """
-    vec = np.zeros(DECK_SIZE, dtype=np.float32)
-    hand = round_obj.hands[int(agent_player)]
-    for card in hand:
-        if card is not None:
-            vec[int(card)] = 1.0
-    return vec
-
-
-def encode_seen(round_obj, agent_player: EPlayer) -> np.ndarray:
-    """
-    Cards that are publicly visible to everyone or known to this player.
-    - All played cards (completed/current tricks)
-    - Upcard
-    - Discarded card (only if this player is the dealer)
-    Shape: (DECK_SIZE,)
-    """
-    vec = np.zeros(DECK_SIZE, dtype=np.float32)
-
-    # Played cards
-    for c in round_obj.played_ecards:
-        if c is not None:
-            vec[int(c)] = 1.0
-
-    # Upcard (visible to all)
-    if getattr(round_obj, "upcard", None) is not None:
-        vec[int(round_obj.upcard)] = 1.0
-
-    # Discarded card – only the dealer knows
-    if getattr(round_obj, "discarded_card", None) is not None:
-        if round_obj.dealer == agent_player:
-            vec[int(round_obj.discarded_card)] = 1.0
-
-    return vec
-
-
-def encode_trump(round_obj) -> np.ndarray:
-    """
-    One-hot trump suit, or all zeros if not chosen yet.
-    Shape: (NUM_SUITS,)
-    """
-    trump = getattr(round_obj, "trump_esuit", None)
-    if trump is None:
-        return np.zeros(NUM_SUITS, dtype=np.float32)
-    return _one_hot(int(trump), NUM_SUITS)
-
-
-def encode_round_state(round_obj) -> np.ndarray:
-    """
-    One-hot of Round state (FIRST_BIDDING, PLAYING, etc).
-    Shape: (NUM_STATES,)
-    """
-    estate = getattr(round_obj, "estate", None)
-    if estate is None:
-        return np.zeros(NUM_STATES, dtype=np.float32)
-    return _one_hot(int(estate), NUM_STATES)
-
-
-def encode_trick_number(round_obj) -> np.ndarray:
-    """
-    Trick number / 5, so it's in [0,1].
-    Shape: (1,)
-    """
-    tn = getattr(round_obj, "trick_number", 0)
-    return np.array([tn / 5.0], dtype=np.float32)
-
-
-def encode_trick_wins(round_obj, agent_player: EPlayer) -> np.ndarray:
-    """
-    Tricks won by:
-      - agent's team
-      - opponents
-    both normalized by TRICK_COUNT (=5)
-    Shape: (2,)
-    """
-    trick_wins = getattr(round_obj, "trick_wins", [0, 0])
-    team_idx = eplayer_to_team_index(agent_player)
-    opp_idx = get_other_team_index(team_idx)
-    return np.array(
-        [
-            trick_wins[team_idx] / 5.0,
-            trick_wins[opp_idx] / 5.0,
-        ],
-        dtype=np.float32,
-    )
-
-
-def encode_player_id(agent_player: EPlayer) -> np.ndarray:
-    """
-    One-hot for which player index (0..3).
-    Shape: (PLAYER_COUNT,)
-    """
-    return _one_hot(int(agent_player), PLAYER_COUNT)
-
-
-def encode_state(round_obj, agent_player: EPlayer) -> np.ndarray:
-    """
-    Full observation vector for the currently acting seat.
-
-    You can absolutely add more features later (led suit, trump counts,
-    particle-filter beliefs, etc.) – this is just a reasonably rich baseline.
-
-    Final shape:
-      in_hand          : DECK_SIZE
-      seen             : DECK_SIZE
-      trump suit       : NUM_SUITS
-      round state      : NUM_STATES
-      trick number     : 1
-      trick wins       : 2
-      player id        : PLAYER_COUNT
-
-      total = 2*DECK_SIZE + NUM_SUITS + NUM_STATES + 1 + 2 + PLAYER_COUNT
-    """
-    return np.concatenate(
-        [
-            encode_in_hand(round_obj, agent_player),
-            encode_seen(round_obj, agent_player),
-            encode_trump(round_obj),
-            encode_round_state(round_obj),
-            encode_trick_number(round_obj),
-            encode_trick_wins(round_obj, agent_player),
-            encode_player_id(agent_player),
-        ],
-        axis=0,
-    ).astype(np.float32)
-
-
-def encode_playable(round_obj, agent_player: EPlayer) -> np.ndarray:
-    """
-    Action mask over ALL actions in EAction (by IntEnum value).
-    1.0 where legal, 0.0 otherwise.
-    Shape: (NUM_ACTIONS,)
+    Action mask over PLAY_CARD_* actions only.
+    Shape: (NUM_ACTIONS=5,)
     """
     mask = np.zeros(NUM_ACTIONS, dtype=np.float32)
     legal = round_obj.get_actions()
-    for a in legal:
-        mask[int(a)] = 1.0
+
+    for idx, act in enumerate(PLAY_CARD_ACTIONS):
+        if act in legal:
+            mask[idx] = 1.0
     return mask
 
 
-# =========================
-#   POLICY & VALUE NET
-# =========================
+def encode_state(round_obj, player: EPlayer) -> np.ndarray:
+    """
+    Simple, compact play-only state encoding that:
+    - encodes hand (onehot)
+    - encodes visible tricks
+    - encodes trump, dealer, maker, trick index
+    - encodes player identity
+
+    Final dim ~137–180 depending on deck size.
+    """
+    hand = round_obj.hands[player]
+
+    # ----------------------------
+    # 1. Hand encoding (one-hot)
+    # ----------------------------
+    hand_vec = np.zeros(DECK_SIZE, dtype=np.float32)
+    for c in hand:
+        if c is not None:
+            hand_vec[int(c)] = 1.0
+
+    # ----------------------------
+    # 2. Current trick cards (4 × DECK_SIZE)
+    # ----------------------------
+    trick_cards = []
+    for c in round_obj.played_ecards:
+        one = np.zeros(DECK_SIZE, dtype=np.float32)
+        if c is not None:
+            one[int(c)] = 1.0
+        trick_cards.append(one)
+
+    # pad to 4 cards
+    while len(trick_cards) < 4:
+        trick_cards.append(np.zeros(DECK_SIZE, dtype=np.float32))
+
+    trick_vec = np.concatenate(trick_cards, axis=0)
+
+    # ----------------------------
+    # 3. Meta information
+    # ----------------------------
+    trick_pos = np.zeros(4, dtype=np.float32)
+    tp = len(round_obj.played_ecards)
+    if 0 <= tp <= 3:
+        trick_pos[tp] = 1.0
+
+    trump_vec = np.zeros(4, dtype=np.float32)
+    if round_obj.trump_esuit is not None:
+        trump_vec[int(round_obj.trump_esuit)] = 1.0
+
+    maker_vec = np.zeros(4, dtype=np.float32)
+    if round_obj.maker is not None:
+        maker_vec[int(round_obj.maker)] = 1.0
+
+    dealer_vec = np.zeros(4, dtype=np.float32)
+    dealer_vec[int(round_obj.dealer)] = 1.0
+
+    player_vec = np.zeros(4, dtype=np.float32)
+    player_vec[int(player)] = 1.0
+
+    # ----------------------------
+    # Concatenate everything
+    # ----------------------------
+    state = np.concatenate(
+        [
+            hand_vec,
+            trick_vec,
+            trick_pos,
+            trump_vec,
+            maker_vec,
+            dealer_vec,
+            player_vec,
+        ],
+        axis=0,
+    )
+
+    return state.astype(np.float32)
+
+
+# ============================================================
+# POLICY NETWORK (Shared across all 4 seats)
+# ============================================================
 
 class SharedPolicyNet(nn.Module):
     """
-    Shared policy + value head that controls all 4 seats.
-    Uses action masking by adding log(mask) to logits.
+    Masked PPO policy + value network.
     """
 
     def __init__(self, obs_dim: int, act_dim: int, hidden_dim: int = 256):
         super().__init__()
+
         self.backbone = nn.Sequential(
             nn.Linear(obs_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
         )
+
         self.policy_head = nn.Linear(hidden_dim, act_dim)
         self.value_head = nn.Linear(hidden_dim, 1)
 
-    def forward(self, obs: torch.Tensor, action_mask: torch.Tensor | None = None):
+    def forward(self, obs: torch.Tensor, mask: torch.Tensor):
         """
-        obs: (B, obs_dim)
-        action_mask: (B, act_dim) in {0,1}, or None
+        obs:  (B, obs_dim)
+        mask: (B, act_dim) values ∈ {0,1}
         """
         x = self.backbone(obs)
-        logits = self.policy_head(x)  # (B, act_dim)
+        logits = self.policy_head(x)
 
-        if action_mask is not None:
-            # Avoid log(0) by eps shifting
-            eps = 1e-8
-            logits = logits + torch.log(action_mask + eps)
+        # Masking: illegal → -1e9
+        eps = 1e-8
+        masked_logits = logits + torch.log(mask + eps)
+        masked_logits = masked_logits.masked_fill(mask <= 0.0, -1e9)
 
-        value = self.value_head(x).squeeze(-1)  # (B,)
-        return logits, value
+        value = self.value_head(x)
+        return masked_logits, value
 
-    def act(self, obs: np.ndarray, mask: np.ndarray, device: torch.device):
+    def act(self, obs_np: np.ndarray, mask_np: np.ndarray, device=torch.device("cpu")):
         """
-        Single-step act() helper for interaction with the env.
+        Choose an action from single observation.
         """
-        obs_t = torch.as_tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
-        mask_t = torch.as_tensor(mask, dtype=torch.float32, device=device).unsqueeze(0)
+        obs = torch.tensor(obs_np, dtype=torch.float32, device=device).unsqueeze(0)
+        mask = torch.tensor(mask_np, dtype=torch.float32, device=device).unsqueeze(0)
 
         with torch.no_grad():
-            logits, value = self.forward(obs_t, mask_t)
+            logits, value = self.forward(obs, mask)
             dist = Categorical(logits=logits)
             action = dist.sample()
             logprob = dist.log_prob(action)
@@ -226,13 +170,13 @@ class SharedPolicyNet(nn.Module):
         return (
             int(action.item()),
             float(logprob.item()),
-            float(value.item()),
+            float(value.squeeze().item()),
         )
 
 
-# =========================
-#   ROLLOUT BUFFER (PPO)
-# =========================
+# ============================================================
+# ROLLOUT BUFFER
+# ============================================================
 
 @dataclass
 class Transition:
@@ -262,7 +206,7 @@ class RolloutBuffer:
         self.ptr = 0
 
     def store(self, tr: Transition):
-        assert self.ptr < self.max_size, "RolloutBuffer overflow – increase max_size"
+        assert self.ptr < self.max_size, "RolloutBuffer overflow"
         self.obs[self.ptr] = tr.obs
         self.masks[self.ptr] = tr.mask
         self.actions[self.ptr] = tr.action
@@ -272,38 +216,38 @@ class RolloutBuffer:
         self.dones[self.ptr] = float(tr.done)
         self.ptr += 1
 
-    def compute_returns_advantages(self, gamma: float, lam: float):
-        size = self.ptr
-        returns = np.zeros(size, dtype=np.float32)
-        advantages = np.zeros(size, dtype=np.float32)
-        last_adv = 0.0
-        last_ret = 0.0
+    def compute_returns_and_advantages(self, gamma: float, lam: float):
+        N = self.ptr
+        returns = np.zeros(N, dtype=np.float32)
+        adv = np.zeros(N, dtype=np.float32)
 
-        for t in reversed(range(size)):
-            mask = 1.0 - self.dones[t]
-            last_ret = self.rewards[t] + gamma * last_ret * mask
-            delta = self.rewards[t] + gamma * self.values[t + 1] * mask - self.values[t] if t + 1 < size else \
-                self.rewards[t] - self.values[t]
-            last_adv = delta + gamma * lam * last_adv * mask
+        last_gae = 0.0
+        for t in reversed(range(N)):
+            next_value = self.values[t + 1] if t + 1 < N else 0.0
+            delta = self.rewards[t] + gamma * next_value * (1 - self.dones[t]) - self.values[t]
+            last_gae = delta + gamma * lam * (1 - self.dones[t]) * last_gae
+            adv[t] = last_gae
+            returns[t] = adv[t] + self.values[t]
 
-            returns[t] = last_ret
-            advantages[t] = last_adv
-
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
         return (
-            torch.as_tensor(self.obs[:size], dtype=torch.float32, device=self.device),
-            torch.as_tensor(self.masks[:size], dtype=torch.float32, device=self.device),
-            torch.as_tensor(self.actions[:size], dtype=torch.int64, device=self.device),
-            torch.as_tensor(self.logprobs[:size], dtype=torch.float32, device=self.device),
-            torch.as_tensor(returns, dtype=torch.float32, device=self.device),
-            torch.as_tensor(advantages, dtype=torch.float32, device=self.device),
+            torch.tensor(self.obs[:N], dtype=torch.float32, device=self.device),
+            torch.tensor(self.masks[:N], dtype=torch.float32, device=self.device),
+            torch.tensor(self.actions[:N], dtype=torch.int64, device=self.device),
+            torch.tensor(self.logprobs[:N], dtype=torch.float32, device=self.device),
+            torch.tensor(returns, dtype=torch.float32, device=self.device),
+            torch.tensor(adv, dtype=torch.float32, device=self.device),
         )
 
 
+# ============================================================
+# PPO UPDATE
+# ============================================================
+
 def ppo_update(
     policy: SharedPolicyNet,
-    optimizer: torch.optim.Optimizer,
+    optimizer: optim.Optimizer,
     buffer: RolloutBuffer,
     gamma: float,
     lam: float,
@@ -311,36 +255,38 @@ def ppo_update(
     policy_epochs: int = 4,
     batch_size: int = 256,
 ):
-    obs, masks, acts, old_logps, returns, adv = buffer.compute_returns_advantages(gamma, lam)
-    num_samples = obs.shape[0]
-    indices = np.arange(num_samples)
+    obs, masks, actions, old_logps, returns, adv = buffer.compute_returns_and_advantages(gamma, lam)
+    N = obs.shape[0]
+    idxs = np.arange(N)
 
     for _ in range(policy_epochs):
-        np.random.shuffle(indices)
-        for start in range(0, num_samples, batch_size):
-            idx = indices[start:start + batch_size]
-            batch_obs = obs[idx]
-            batch_masks = masks[idx]
-            batch_acts = acts[idx]
-            batch_old_logps = old_logps[idx]
-            batch_returns = returns[idx]
-            batch_adv = adv[idx]
+        np.random.shuffle(idxs)
+        for start in range(0, N, batch_size):
+            batch_idx = idxs[start:start + batch_size]
 
-            logits, values = policy(batch_obs, batch_masks)
+            b_obs = obs[batch_idx]
+            b_masks = masks[batch_idx]
+            b_actions = actions[batch_idx]
+            b_old_logps = old_logps[batch_idx]
+            b_returns = returns[batch_idx]
+            b_adv = adv[batch_idx]
+
+            logits, values = policy(b_obs, b_masks)
             dist = Categorical(logits=logits)
-            logps = dist.log_prob(batch_acts)
+            logps = dist.log_prob(b_actions)
+            entropy = dist.entropy().mean()
 
-            ratio = torch.exp(logps - batch_old_logps)
-            surr1 = ratio * batch_adv
-            surr2 = torch.clamp(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio) * batch_adv
+            ratio = torch.exp(logps - b_old_logps)
+
+            surr1 = ratio * b_adv
+            surr2 = torch.clamp(ratio, 1 - clip_ratio, 1 + clip_ratio) * b_adv
             policy_loss = -torch.min(surr1, surr2).mean()
 
-            value_loss = 0.5 * (batch_returns - values).pow(2).mean()
-            entropy_loss = -dist.entropy().mean() * 0.01
+            value_loss = (b_returns - values.squeeze()).pow(2).mean()
 
-            loss = policy_loss + value_loss + entropy_loss
+            loss = policy_loss + 0.5 * value_loss - 0.01 * entropy
 
             optimizer.zero_grad()
             loss.backward()
-            nn.utils.clip_grad_norm_(policy.parameters(), max_norm=1.0)
+            nn.utils.clip_grad_norm_(policy.parameters(), 0.5)
             optimizer.step()

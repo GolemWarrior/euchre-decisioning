@@ -105,20 +105,27 @@ class Round:
             # Determine which cards can be played according to the trump suit and led suit
             led_suit = get_ecard_esuit(self.played_ecards[0])
 
-            is_valid = [False] * 4
-            for i in range(4):
-                ecard = current_hand[i]
+            is_valid = [False] * 5
+            for i, ecard in enumerate(current_hand):
                 if ecard is None:
                     continue
 
-                if get_ecard_esuit(ecard) == led_suit or get_ecard_esuit(ecard) == self.trump_esuit or (get_ecard_erank(ecard) == JACK and get_ecard_esuit(ecard) == get_same_color_esuit(self.trump_esuit)):
+                # NOTE: still using your current (slightly wrong) trump logic;
+                # we can fix that separately later.
+                if (
+                    get_ecard_esuit(ecard) == led_suit
+                    or get_ecard_esuit(ecard) == self.trump_esuit
+                    or (
+                        get_ecard_erank(ecard) == JACK
+                        and get_ecard_esuit(ecard) == get_same_color_esuit(self.trump_esuit)
+                    )
+                ):
                     is_valid[i] = True
 
-            # Allow the player to play valid cards (otherwise any remaining card if the player has no valid cards)
             if any(is_valid):
                 actions = set()
-                for i in range(4):
-                    if is_valid[i]:
+                for i, ok in enumerate(is_valid):
+                    if ok:
                         actions.add(PLAY_CARD_ACTIONS[i])
                 return actions
             else:
