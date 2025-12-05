@@ -1,9 +1,12 @@
 from enum import IntEnum
 import random
 import numpy as np
+import copy
 
 from .deck import ESuit, ECard, Deck, get_ecard_esuit, get_ecard_erank, get_same_color_esuit, get_ecard_score, JACK
 from .players import EPlayer, get_clockwise_player, eplayer_to_team_index, get_other_team_index, get_teammate
+
+TRICK_COUNT = 5
 
 ROUND_STATES = ["FIRST_BIDDING", "DEALER_DISCARD", "DECIDING_GOING_ALONE", "SECOND_BIDDING", "CHOOSING_ESUIT", "PLAYING"]
 RoundEState = IntEnum("RoundEState", [(round_state, index) for index, round_state in enumerate(ROUND_STATES)])
@@ -61,6 +64,7 @@ class Round:
         self.current_player = get_clockwise_player(self.dealer)
 
         self.hands = [list([ECard(npint) for npint in array]) for array in np.array_split(self.deck.draw_ecards(20), 4)]
+        self.original_hands = copy.deepcopy(self.hands)
 
         self.upcard = ECard(self.deck.draw_ecards(1)[0])
         self.discarded_card = None
