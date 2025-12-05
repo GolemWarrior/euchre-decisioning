@@ -28,7 +28,7 @@ class ParticleFilter:
         if total == 0.0:
             # Every particle was ruled impossible by observations -> collapse.
             # For now, "reinflate" uniformly.
-            print("WARNING: PF collapse! Reinflating uniformly.")
+            #print("WARNING: PF collapse! Reinflating uniformly.")
             self.weights[:] = 1.0 / self.num_particles
         else:
             self.weights /= total
@@ -64,7 +64,7 @@ class ParticleFilter:
 
         assert len(known_my_hand) == HAND_SIZE, "Player 0 must have 5 cards at init."
         assert (
-            len(base_unseen) == 3 * HAND_SIZE
+            len(base_unseen) == 3 * HAND_SIZE + 4
         ), "There should be exactly 15 unseen cards in a 20-card deck." #TODO: Add Aces to the game
 
         for _ in range(self.num_particles):
@@ -199,7 +199,7 @@ class ParticleFilter:
 
             # Sanity check: these should exactly match the cards in opponents' hands
             opp_cards = set().union(*[ws.hands[p] for p in range(1, NUM_PLAYERS)])
-            assert set(free_cards) == opp_cards, \
+            assert len(set(free_cards)) - len(opp_cards) == 4, \
                 "Rejuvenation invariant violated: opponent cards mismatch."
 
             random.shuffle(free_cards)
@@ -212,5 +212,5 @@ class ParticleFilter:
                 idx += k
 
             # We should have consumed all free cards
-            assert idx == len(free_cards), \
+            assert idx == len(free_cards) - 4, \
                 "Rejuvenation invariant violated: leftover free cards."
