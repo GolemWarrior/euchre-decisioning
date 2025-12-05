@@ -191,7 +191,7 @@ class Round:
             if len(self.played_ecards) == 4:
                 self.end_trick()
 
-                if self.trick_number == 4:
+                if self.trick_number == 5:
                     self.score_round()
                     self.finished = True
             else:
