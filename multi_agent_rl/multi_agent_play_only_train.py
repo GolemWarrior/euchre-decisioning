@@ -142,7 +142,7 @@ def main():
     import os
     os.makedirs("euchre_models", exist_ok=True)
 
-    for episode in range(10000):
+    for episode in range(20_000):
         batch = generate_episode(env, policy)
         loss = ppo_update(policy, optimizer, batch)
 

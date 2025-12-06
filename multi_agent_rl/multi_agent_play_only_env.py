@@ -12,8 +12,8 @@ from state_encoding.multi_agent_play_only_rl import encode_state, encode_playabl
 
 # Reward scales
 WIN_TRICK = 1
-PER_WON_POINT = 10
-ILLEGAL_MOVE = -1
+PER_WON_POINT = 8
+ILLEGAL_MOVE = -2
 
 def do_bidding_phase(round):
     while not round.finished and round.estate != PLAYING_STATE:
