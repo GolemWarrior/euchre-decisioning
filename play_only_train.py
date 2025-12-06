@@ -13,12 +13,15 @@ def make_env():
 env = DummyVecEnv([make_env])
 
 #TIME_STEPS = 10000
-TIME_STEPS = 200000
+#TIME_STEPS = 3000000
 #TIME_STEPS = 3000000  # About 20 mins, "Mean reward: 2.6364 +/- 15.607512134866337"
 #TIME_STEPS = 8000000  # About 55 mins, "Mean reward: 2.89266 +/- 15.559961379270836"
 #TIME_STEPS = 20000000 # About 2.5 hrs, "Mean reward: 3.5897 +/- 15.56185380698585"
+#TIME_STEPS = 3000000  # Something like 30 mins, "Mean reward: 1.2175199999999999 +/- 15.261715665337237"
+TIME_STEPS = 30000000  # Long time, "Mean reward: 2.0163800000000004 +/- 14.0952450030356"
 
-SELF_PLAY_UPDATE_FREQ = 20000
+
+SELF_PLAY_UPDATE_FREQ = 1000
 
 class SelfPlayUpdateCallback(BaseCallback):
     def __init__(self):
@@ -28,8 +31,15 @@ class SelfPlayUpdateCallback(BaseCallback):
     def _on_step(self):
         if self.num_timesteps % SELF_PLAY_UPDATE_FREQ == 0:
             # Add snapshot
-            snapshot = self.model.__class__.load(self.model.save("tmp.zip"))
+            path = "tmp.zip"
+            self.model.save(path)
+            snapshot = self.model.__class__.load(path)
             self.pool.append(snapshot)
+
+            # Once there are 500 in the pool, remove a random model each time a new one is added (tends to remove older models)
+            if len(self.pool) > 500:
+                index = random.randrange(len(self.pool))
+                self.pool.pop(index)
 
             # Random agents
             self.training_env.env_method("set_agents", [random.choice(self.pool), random.choice(self.pool), random.choice(self.pool)])
@@ -69,18 +79,22 @@ model = MaskablePPO(
     ),
 )
 
-# Train the model
-model.learn(total_timesteps=TIME_STEPS, log_interval=1)
+if __name__ == "__main__":
+    # Train the model
+    model.learn(total_timesteps=TIME_STEPS,
+                log_interval=1,
+                callback=SelfPlayUpdateCallback())
 
-model.save("dqn_good_euchre_model")
+    model.save("play_only_euchre_model")
 
-model.load("dqn_good_euchre_model")
+    model.load("play_only_euchre_model")
 
-# Do a quick eval of the model
-env = DummyVecEnv([make_env])
-mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=100000, deterministic=True)
-print(f"Mean reward: {mean_reward} +/- {std_reward}")
+    # Do a quick eval of the model
+    env = DummyVecEnv([make_env])
+    mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=100000, deterministic=True)
+    print(f"Mean reward: {mean_reward} +/- {std_reward}")
 
-env = DummyVecEnv([make_env])
-mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=100000, deterministic=False)
-print(f"Mean (non-deterministic) reward: {mean_reward} +/- {std_reward}")
+    env = DummyVecEnv([make_env])
+    mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=100000, deterministic=False)
+    print(f"Mean (non-deterministic) reward: {mean_reward} +/- {std_reward}")
+

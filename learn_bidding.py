@@ -231,6 +231,75 @@ def rough_learn_bidding(sample_count=SAMPLE_COUNT):
 
     return together_weights, together_biases, alone_weights, alone_biases
 
+
+SAMPLE_COUNT = 2000
+def learn_bidding(agent, sample_count=SAMPLE_COUNT):
+    data = {
+        GO_ALONE: {
+            "hands": [],
+            "trumps": [],
+            "scores": []
+        },
+        DONT_GO_ALONE: {
+            "hands": [],
+            "trumps": [],
+            "scores": []
+        }
+    }
+
+    print("Generating data ...")
+
+    for deciding_alone_action in data.keys():
+        for i in range(sample_count // 2):
+            round = Round()
+
+            while not round.finished and round.estate != DECIDING_GOING_ALONE_STATE:
+                if round.estate == DEALER_DISCARD_STATE:
+                    agent.play(round)
+                else:
+                    round.take_action(random.choice(list(round.get_actions())))
+
+            if round.finished:
+                continue
+
+            round.take_action(deciding_alone_action)
+            hand = round.hands[int(round.maker)].copy()
+
+            while not round.finished:
+                agent.play(round)
+
+            maker = round.maker
+            maker_team = eplayer_to_team_index(maker)
+            other_team = get_other_team_index(maker_team)
+
+            trump_esuit = round.trump_esuit
+            score = round.round_points[maker_team] - round.round_points[other_team]
+
+            data[deciding_alone_action]["hands"].append(hand)
+            data[deciding_alone_action]["trumps"].append(trump_esuit)
+            data[deciding_alone_action]["scores"].append(score)
+
+            if i % 10000 == 0:
+                print(f"Ran simulation {i} for {deciding_alone_action.name}!")
+
+    print("Generated data!")
+    print("Learning ...")
+
+    together_weights, together_biases = learn_from_hands(data[DONT_GO_ALONE]["hands"], data[DONT_GO_ALONE]["trumps"], data[DONT_GO_ALONE]["scores"])
+    alone_weights, alone_biases = learn_from_hands(data[GO_ALONE]["hands"], data[GO_ALONE]["trumps"], data[GO_ALONE]["scores"])
+
+    print("\nFinished learning!")
+    print("together_weights:")
+    print(together_weights)
+    print("together_biases:")
+    print(together_biases)
+    print("alone_weights:")
+    print(alone_weights)
+    print("alone_biases:")
+    print(alone_biases)
+
+    return together_weights, together_biases, alone_weights, alone_biases
+
 if __name__ == "__main__":
     together_weights, together_biases, alone_weights, alone_biases = rough_learn_bidding()
 

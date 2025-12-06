@@ -10,7 +10,7 @@ from state_encoding.multi_agent_play_only_rl import encode_state, encode_playabl
 
 from learn_bidding import rough_learn_bidding, get_best_bidding_action
 
-BIDDING_LEARNING_SIM_ROUNDS = 50000
+BIDDING_LEARNING_SIM_ROUNDS = 500000
 order_weights, order_bias, order_alone_weights, order_alone_bias = rough_learn_bidding(BIDDING_LEARNING_SIM_ROUNDS)
 
 def do_bidding_phase(round):
@@ -50,23 +50,32 @@ class EuchreEnvironment(gym.Env):
         self.state = np.zeros(300, dtype=np.float32)
         self.player = 0
         self.round = None
+
+        self.agents = []
     
     def set_agents(self, agents):
         self.agents = agents
 
     def play_round_until_player(self):
-        pass # TODO
+        while not self.round.finished and self.round.get_current_player() == self.player:
+            current_player = self.round.get_current_player()
+            players = set(range(PLAYER_COUNT))
+            players.remove(int(self.player))
+            current_player_index = players.index(int(current_player))
+
+            if len(self.agents) > current_player_index:
+                ecard_index, _ = self.agents[current_player_index].predict(encode_state(self.round), action_masks=encode_playable(self.round), deterministic=True)
+                ecard_played = ECard(ecard_index)
+                player_hand = self.round.hands[current_player]
+                hand_index = player_hand.index(ecard_played)
+                action_index = PLAY_CARD_ACTIONS[hand_index]
+                round_action = EAction(int(action_index))
+                self.round.take_action(round_action)
+            else:
+                self.round.take_action(random.choice(list(self.round.get_actions())))
 
     def action_masks(self):
         return encode_playable(self.round).astype(bool)
-        #is_legal = [0] * len(ACTIONS)
-        #legal_actions = self.round.get_actions()
-        #for i in range(len(ACTIONS)):
-        #    action = EAction(i)
-        #    if action in legal_actions:
-        #        is_legal[i] = 1
-        # 
-        #return np.array(is_legal).astype(bool)
 
     def reset(self, seed=None, options=None):
         self.player = EPlayer(random.randint(0, PLAYER_COUNT - 1))
