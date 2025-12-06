@@ -1,3 +1,7 @@
+import os
+
+import numpy as np
+
 from state_encoding.multi_agent_play_only_rl import encode_state, encode_playable
 
 from euchre.deck import ECard
@@ -9,8 +13,10 @@ from learn_bidding import get_best_bidding_action, learn_bidding
 from play_only_train import model
 
 AGENT_MODEL_PATH = "play_only_euchre_agent_model.zip"
+BIDDING_LEARNING_SIMS = 200000
+BIDDING_WEIGHTS_SAVE_PATH = f"play_only_euchre_agent_bidding_weights_{BIDDING_LEARNING_SIMS}.npz"
 
-BIDDING_LEARNING_SIMS = 100000
+
 class PlayOnlyAgent:
     def __init__(self):
         self.order_weights, self.order_bias, self.order_alone_weights, self.order_alone_bias = order_weights, order_bias, order_alone_weights, order_alone_bias
@@ -19,7 +25,15 @@ class PlayOnlyAgent:
         self.relearn_bidding_for_self()
 
     def relearn_bidding_for_self(self):
-        self.order_weights, self.order_bias, self.order_alone_weights, self.order_alone_bias = learn_bidding(self, BIDDING_LEARNING_SIMS)
+        if os.path.exists(BIDDING_WEIGHTS_SAVE_PATH):
+            data = np.load(BIDDING_WEIGHTS_SAVE_PATH)
+            self.order_weights = data["order_weights"]
+            self.order_bias = data["order_bias"]
+            self.order_alone_weights = data["order_alone_weights"]
+            self.order_alone_bias = data["order_alone_bias"]
+        else:
+            self.order_weights, self.order_bias, self.order_alone_weights, self.order_alone_bias = learn_bidding(self, BIDDING_LEARNING_SIMS)
+            np.savez(BIDDING_WEIGHTS_SAVE_PATH, order_weights=self.order_weights, order_bias=self.order_bias, order_alone_weights=self.order_alone_weights, order_alone_bias=self.order_alone_bias)
 
     def play(self, round):
         assert not round.finished, "Agent can't play finished round!"

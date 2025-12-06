@@ -1,4 +1,6 @@
 import random
+import os
+
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
@@ -8,10 +10,19 @@ from euchre.deck import ECard, DECK_SIZE
 from euchre.players import EPlayer, eplayer_to_team_index, get_other_team_index, PLAYER_COUNT
 from state_encoding.multi_agent_play_only_rl import encode_state, encode_playable
 
-from learn_bidding import rough_learn_bidding, get_best_bidding_action
+from learn_bidding import learn_bidding, get_best_bidding_action
 
-BIDDING_LEARNING_SIM_ROUNDS = 500000
-order_weights, order_bias, order_alone_weights, order_alone_bias = rough_learn_bidding(BIDDING_LEARNING_SIM_ROUNDS)
+BIDDING_LEARNING_SIM_ROUNDS = 2000000
+BIDDING_WEIGHTS_SAVE_PATH = f"play_only_env_bidding_weights_{BIDDING_LEARNING_SIM_ROUNDS}.npz"
+if os.path.exists(BIDDING_WEIGHTS_SAVE_PATH):
+    data = np.load(BIDDING_WEIGHTS_SAVE_PATH)
+    order_weights = data["order_weights"]
+    order_bias = data["order_bias"]
+    order_alone_weights = data["order_alone_weights"]
+    order_alone_bias = data["order_alone_bias"]
+else:
+    order_weights, order_bias, order_alone_weights, order_alone_bias = learn_bidding(sample_count=BIDDING_LEARNING_SIM_ROUNDS)
+    np.savez(BIDDING_WEIGHTS_SAVE_PATH, order_weights=order_weights, order_bias=order_bias, order_alone_weights=order_alone_weights, order_alone_bias=order_alone_bias)
 
 def do_bidding_phase(round):
     while not round.finished and round.estate != PLAYING_STATE:

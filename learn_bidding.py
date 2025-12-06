@@ -1,15 +1,17 @@
 import numpy as np
 import random
 
-from euchre.players import eplayer_to_team_index, get_other_team_index
+from euchre.players import eplayer_to_team_index, get_other_team_index, get_teammate
 from euchre.deck import ESuit, get_ecard_esuit, get_ecard_erank, get_same_color_esuit, SUITS, RANKS, JACK
 from euchre.round import Round, suit_choice_action_to_esuit_map, PLAY_CARD_ACTIONS, FIRST_BIDDING_STATE, SECOND_BIDDING_STATE, CHOOSING_ESUIT_STATE, DEALER_DISCARD_STATE, DECIDING_GOING_ALONE_STATE, GO_ALONE, DONT_GO_ALONE, ORDER_UP, PASS
+
+from fully_random_agent import FullyRandomAgent
 
 MAX_RANK = len(RANKS)
 
 esuit_to_suit_choice_action = {esuit: choice_action for choice_action, esuit in suit_choice_action_to_esuit_map.items()}
 
-def encode_hand(hand, trump_esuit):
+def encode_hand(hand, trump_esuit, is_dealer_on_team):
     trump_count = 0
     max_trump = 0
     trump_sum = 0
@@ -60,19 +62,20 @@ def encode_hand(hand, trump_esuit):
         non_trump_count,
         non_trump_max,
         non_trump_avg,
-        void_suits
+        void_suits,
+        int(is_dealer_on_team)
     ])
 
-HAND_ENCODING_LENGTH = len(encode_hand([0] * len(SUITS), 0))
+HAND_ENCODING_LENGTH = len(encode_hand([0] * len(SUITS), False, 0))
 
-def learn_from_hands(hands, trump_esuits, scores):
+def learn_from_hands(hands, trump_esuits, is_dealer_on_teams, scores):
     # Takes in a list of maker hands, a list of their selected trump suits, and a list of their scores (IMPORTANT: with opponent points counting as negative!)
 
     sample_count = len(hands)
 
     x_with_bias = np.ones(shape=(sample_count, HAND_ENCODING_LENGTH+1))
-    for i, hand, trump_esuit in zip(range(sample_count), hands, trump_esuits):
-        hand_encoding = encode_hand(hand, trump_esuit)
+    for i, hand, trump_esuit, is_dealer_on_team in zip(range(sample_count), hands, trump_esuits, is_dealer_on_teams):
+        hand_encoding = encode_hand(hand, trump_esuit, is_dealer_on_team)
         x_with_bias[i,0:HAND_ENCODING_LENGTH] = hand_encoding
 
     y = np.array(scores)
@@ -84,8 +87,8 @@ def learn_from_hands(hands, trump_esuits, scores):
 
     return weights, bias
 
-def predict_expected_score(hand, trump_esuit, weights, bias):
-    hand_encoding = encode_hand(hand, trump_esuit)
+def predict_expected_score(hand, trump_esuit, is_dealer_on_team, weights, bias):
+    hand_encoding = encode_hand(hand, trump_esuit, is_dealer_on_team)
     predicted_expected_score = bias + weights @ hand_encoding
 
     return predicted_expected_score
@@ -95,13 +98,18 @@ def get_best_bidding_action(round, order_weights, order_bias, order_alone_weight
     assert round.estate in BIDDING_ESTATES, "Can only get best bidding action in bidding states!"
 
     eplayer = round.get_current_player()
+    teammate = get_teammate(eplayer)
     hand = round.hands[int(eplayer)]
+
+    dealer = round.dealer
+
+    is_dealer_on_team = teammate == dealer or eplayer == dealer and round.estate == FIRST_BIDDING_STATE
 
     if round.estate == FIRST_BIDDING_STATE:
         trump_esuit = get_ecard_esuit(round.upcard)
         expected_order_score = max(
-            predict_expected_score(hand, trump_esuit, order_weights, order_bias),
-            predict_expected_score(hand, trump_esuit, order_alone_weights, order_alone_bias)
+            predict_expected_score(hand, trump_esuit, is_dealer_on_team, order_weights, order_bias),
+            predict_expected_score(hand, trump_esuit, is_dealer_on_team, order_alone_weights, order_alone_bias)
             )
 
         if expected_order_score > 0:
@@ -115,7 +123,7 @@ def get_best_bidding_action(round, order_weights, order_bias, order_alone_weight
         for ecard in hand:
             is_bower = 0
             if get_ecard_erank(ecard) == JACK and (get_ecard_esuit(ecard) == round.trump_esuit or get_ecard_esuit(ecard) == get_same_color_esuit(round.trump_esuit)):
-                is_bower = True
+                is_bower = 1
 
             is_trump = int(get_ecard_esuit(ecard) == round.trump_esuit)
 
@@ -141,8 +149,8 @@ def get_best_bidding_action(round, order_weights, order_bias, order_alone_weight
         for i in range(len(SUITS)):
             potential_trump_esuit = ESuit(i)
             expected_score = max(
-                predict_expected_score(hand, potential_trump_esuit, order_weights, order_bias),
-                predict_expected_score(hand, potential_trump_esuit, order_alone_weights, order_alone_bias)
+                predict_expected_score(hand, potential_trump_esuit, is_dealer_on_team, order_weights, order_bias),
+                predict_expected_score(hand, potential_trump_esuit, is_dealer_on_team, order_alone_weights, order_alone_bias)
                 )
             if expected_score > best_expected_score:
                 best_expected_score = expected_score
@@ -158,91 +166,27 @@ def get_best_bidding_action(round, order_weights, order_bias, order_alone_weight
 
     elif round.estate == DECIDING_GOING_ALONE_STATE:
         trump_esuit = round.trump_esuit
-        dont_go_alone = predict_expected_score(hand, trump_esuit, order_weights, order_bias)
-        go_alone = predict_expected_score(hand, trump_esuit, order_alone_weights, order_alone_bias)
+        dont_go_alone = predict_expected_score(hand, trump_esuit, is_dealer_on_team, order_weights, order_bias)
+        go_alone = predict_expected_score(hand, trump_esuit, is_dealer_on_team, order_alone_weights, order_alone_bias)
 
         if go_alone > dont_go_alone:
             return GO_ALONE
         else:
             return DONT_GO_ALONE
 
-SAMPLE_COUNT = 100000
-def rough_learn_bidding(sample_count=SAMPLE_COUNT):
+DEFAULT_AGENT = FullyRandomAgent()
+def learn_bidding(agent=DEFAULT_AGENT, sample_count=2000):
     data = {
         GO_ALONE: {
             "hands": [],
             "trumps": [],
+            "is_dealer_on_team": [],
             "scores": []
         },
         DONT_GO_ALONE: {
             "hands": [],
             "trumps": [],
-            "scores": []
-        }
-    }
-
-    print("Generating data ...")
-
-    for deciding_alone_action in data.keys():
-        for i in range(sample_count):
-            round = Round()
-
-            while not round.finished and round.estate != DECIDING_GOING_ALONE_STATE:
-                round.take_action(random.choice(list(round.get_actions())))
-
-            if round.finished:
-                continue
-
-            round.take_action(deciding_alone_action)
-            hand = round.hands[int(round.maker)].copy()
-
-            while not round.finished:
-                round.take_action(random.choice(list(round.get_actions())))
-
-            maker = round.maker
-            maker_team = eplayer_to_team_index(maker)
-            other_team = get_other_team_index(maker_team)
-
-            trump_esuit = round.trump_esuit
-            score = round.round_points[maker_team] - round.round_points[other_team]
-
-            data[deciding_alone_action]["hands"].append(hand)
-            data[deciding_alone_action]["trumps"].append(trump_esuit)
-            data[deciding_alone_action]["scores"].append(score)
-
-            if i % 10000 == 0:
-                print(f"Ran simulation {i} for {deciding_alone_action.name}!")
-
-    print("Generated data!")
-    print("Learning ...")
-
-    together_weights, together_biases = learn_from_hands(data[DONT_GO_ALONE]["hands"], data[DONT_GO_ALONE]["trumps"], data[DONT_GO_ALONE]["scores"])
-    alone_weights, alone_biases = learn_from_hands(data[GO_ALONE]["hands"], data[GO_ALONE]["trumps"], data[GO_ALONE]["scores"])
-
-    print("\nFinished learning!")
-    print("together_weights:")
-    print(together_weights)
-    print("together_biases:")
-    print(together_biases)
-    print("alone_weights:")
-    print(alone_weights)
-    print("alone_biases:")
-    print(alone_biases)
-
-    return together_weights, together_biases, alone_weights, alone_biases
-
-
-SAMPLE_COUNT = 2000
-def learn_bidding(agent, sample_count=SAMPLE_COUNT):
-    data = {
-        GO_ALONE: {
-            "hands": [],
-            "trumps": [],
-            "scores": []
-        },
-        DONT_GO_ALONE: {
-            "hands": [],
-            "trumps": [],
+            "is_dealer_on_team": [],
             "scores": []
         }
     }
@@ -275,8 +219,13 @@ def learn_bidding(agent, sample_count=SAMPLE_COUNT):
             trump_esuit = round.trump_esuit
             score = round.round_points[maker_team] - round.round_points[other_team]
 
+            dealer = round.dealer
+            teammate = get_teammate(maker)
+            is_dealer_on_team = teammate == dealer or maker == dealer and round.estate == FIRST_BIDDING_STATE
+
             data[deciding_alone_action]["hands"].append(hand)
             data[deciding_alone_action]["trumps"].append(trump_esuit)
+            data[deciding_alone_action]["is_dealer_on_team"].append(is_dealer_on_team)
             data[deciding_alone_action]["scores"].append(score)
 
             if i % 10000 == 0:
@@ -285,8 +234,8 @@ def learn_bidding(agent, sample_count=SAMPLE_COUNT):
     print("Generated data!")
     print("Learning ...")
 
-    together_weights, together_biases = learn_from_hands(data[DONT_GO_ALONE]["hands"], data[DONT_GO_ALONE]["trumps"], data[DONT_GO_ALONE]["scores"])
-    alone_weights, alone_biases = learn_from_hands(data[GO_ALONE]["hands"], data[GO_ALONE]["trumps"], data[GO_ALONE]["scores"])
+    together_weights, together_biases = learn_from_hands(data[DONT_GO_ALONE]["hands"], data[DONT_GO_ALONE]["trumps"], data[DONT_GO_ALONE]["is_dealer_on_team"], data[DONT_GO_ALONE]["scores"])
+    alone_weights, alone_biases = learn_from_hands(data[GO_ALONE]["hands"], data[GO_ALONE]["trumps"], data[GO_ALONE]["is_dealer_on_team"], data[GO_ALONE]["scores"])
 
     print("\nFinished learning!")
     print("together_weights:")
@@ -301,7 +250,7 @@ def learn_bidding(agent, sample_count=SAMPLE_COUNT):
     return together_weights, together_biases, alone_weights, alone_biases
 
 if __name__ == "__main__":
-    together_weights, together_biases, alone_weights, alone_biases = rough_learn_bidding()
+    together_weights, together_biases, alone_weights, alone_biases = learn_bidding(sample_count=400000)
 
     TEST_ROUNDS = 100000
 
