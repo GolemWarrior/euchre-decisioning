@@ -105,8 +105,8 @@ class Round:
             # Determine which cards can be played according to the trump suit and led suit
             led_suit = get_ecard_esuit(self.played_ecards[0])
 
-            is_valid = [False] * 4
-            for i in range(4):
+            is_valid = [False] * 5
+            for i in range(5):
                 ecard = current_hand[i]
                 if ecard is None:
                     continue
@@ -117,7 +117,7 @@ class Round:
             # Allow the player to play valid cards (otherwise any remaining card if the player has no valid cards)
             if any(is_valid):
                 actions = set()
-                for i in range(4):
+                for i in range(5):
                     if is_valid[i]:
                         actions.add(PLAY_CARD_ACTIONS[i])
                 return actions
