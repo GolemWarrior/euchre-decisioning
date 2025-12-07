@@ -1,25 +1,29 @@
-from stable_baselines3 import DQN
+import os
+import random
+
+import torch
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
 #from stable_baselines3.common.evaluation import evaluate_policy
 from sb3_contrib.common.maskable.evaluation import evaluate_policy
 from stable_baselines3.common.callbacks import BaseCallback
 from play_only_env import EuchreEnvironment
-import torch
-import random
+
+INITIAL_TRAINING_MODEL = "play_only_euchre_agent_model_start.zip"
 
 def make_env():
     return Monitor(EuchreEnvironment())
 env = DummyVecEnv([make_env])
 
-#TIME_STEPS = 10000
-#TIME_STEPS = 3000000
-#TIME_STEPS = 3000000  # About 20 mins, "Mean reward: 2.6364 +/- 15.607512134866337"
-#TIME_STEPS = 8000000  # About 55 mins, "Mean reward: 2.89266 +/- 15.559961379270836"
-#TIME_STEPS = 20000000 # About 2.5 hrs, "Mean reward: 3.5897 +/- 15.56185380698585"
-#TIME_STEPS = 3000000  # Something like 30 mins, "Mean reward: 1.2175199999999999 +/- 15.261715665337237"
-TIME_STEPS = 30000000  # Long time, "Mean reward: 2.0163800000000004 +/- 14.0952450030356"
+# Training against random play, scored against random play, reward is points scored - opponent points scored (with 0.1 * (tricks won minus opponet tricks won)):
+#TIME_STEPS = 3000000  # About 20 mins, "Mean reward: 0.26364 +/- 1.5607512134866337"
+#TIME_STEPS = 8000000  # About 55 mins, "Mean reward: 0.289266 +/- 1.5559961379270836"
+#TIME_STEPS = 20000000 # About 2.5 hrs, "Mean reward: 0.35897 +/- 1.556185380698585"
 
+# Training against self-play, scoreed against random play, reward is roughly points scored - opponent points scored (with 0.1 * (tricks won minus opponet tricks won)):
+#TIME_STEPS = 3000000  # Something like 30 mins, "Mean reward: 0.12175199999999999 +/- 1.5261715665337237"
+#TIME_STEPS = 30000000  # Long time, "Mean reward: 0.20163800000000004 +/- 1.40952450030356"
+TIME_STEPS = 60000000  # Long time, "Mean reward: 0.23198600000000003 +/- 1.4297022402598383"
 
 SELF_PLAY_UPDATE_FREQ = 1000
 
@@ -80,6 +84,9 @@ model = MaskablePPO(
 )
 
 if __name__ == "__main__":
+    if os.path.exists(INITIAL_TRAINING_MODEL):
+        model.load(INITIAL_TRAINING_MODEL)
+
     # Train the model
     model.learn(total_timesteps=TIME_STEPS,
                 log_interval=1,
