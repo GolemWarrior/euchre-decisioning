@@ -15,13 +15,8 @@ from euchre.round import (
 from euchre.players import EPlayer, eplayer_to_team_index
 from euchre.deck import ECard, get_ecard_esuit
 from mcts import POMCPPlanner
-from bidding_hueristics import (
-    should_order_up,
-    should_call_suit_second_round,
-    should_go_alone,
-    get_suit_choice_action,
-    choose_best_suit
-)
+
+from learn_bidding import get_best_bidding_action, BIDDING_ESTATES
 
 
 class EuchrePOMDPAgent:
@@ -38,6 +33,10 @@ class EuchrePOMDPAgent:
     def __init__(
         self,
         player: EPlayer,
+        order_weights,
+        order_bias,
+        order_alone_weights,
+        order_alone_bias,
         num_particles: int = 500,
         num_simulations: int = 1000,
         exploration_constant: float = 10.0
@@ -54,6 +53,11 @@ class EuchrePOMDPAgent:
         """
         self.player = player
         self.team_index = eplayer_to_team_index(player)
+
+        self.order_weights = order_weights
+        self.order_bias = order_bias
+        self.order_alone_weights = order_alone_weights
+        self.order_alone_bias = order_alone_bias
 
         # POMCP planner for card play
         self.planner = POMCPPlanner(
@@ -83,20 +87,15 @@ class EuchrePOMDPAgent:
             self.belief_initialized = False
 
         # Route to appropriate decision method based on game state
-        if round_state == FIRST_BIDDING_STATE:
-            return self._get_first_bidding_action(game)
-
-        elif round_state == DEALER_DISCARD_STATE:
-            return self._get_dealer_discard_action(game)
-
-        elif round_state == DECIDING_GOING_ALONE_STATE:
-            return self._get_going_alone_action(game)
-
-        elif round_state == SECOND_BIDDING_STATE:
-            return self._get_second_bidding_action(game)
-
-        elif round_state == CHOOSING_ESUIT_STATE:
-            return self._get_suit_choice_action(game)
+        # Use RL bidding for all bidding states
+        if round_state in BIDDING_ESTATES:
+            return get_best_bidding_action(
+                game.round,
+                self.order_weights,
+                self.order_bias,
+                self.order_alone_weights,
+                self.order_alone_bias
+            )
 
         elif round_state == PLAYING_STATE:
             if not self.belief_initialized:
@@ -112,101 +111,37 @@ class EuchrePOMDPAgent:
         my_hand = set(card for card in game.round.hands[self.player] if card is not None)
         self.planner.initialize(my_hand)
 
-    def _get_first_bidding_action(self, game: Game):
-        """
-        Decide whether to order up in first bidding round using heuristics.
-        """
-        my_hand = game.round.hands[self.player]
-        upcard = game.round.upcard
-        is_dealer = (game.round.dealer == self.player)
-
-        if should_order_up(my_hand, upcard, is_dealer):
-            return EAction.ORDER_UP
-        else:
-            return EAction.PASS
-
-    def _get_dealer_discard_action(self, game: Game):
-        """
-        Choose which card to discard when picking up the upcard.
-        """
-        my_hand = game.round.hands[self.player]
-        trump_suit = game.round.trump_esuit
-
-        # Find non-trump cards
-        non_trump_indices = []
-        for i, card in enumerate(my_hand):
-            if card is not None and get_ecard_esuit(card) != trump_suit:
-                non_trump_indices.append(i)
-
-        # If we have non-trump cards, discard the first one
-        if non_trump_indices:
-            discard_idx = non_trump_indices[0]
-        else:
-            # All cards are trump, discard the last valid card slot
-            discard_idx = 0
-            for i in range(len(my_hand) - 1, -1, -1):
-                if my_hand[i] is not None:
-                    discard_idx = i
-                    break
-
-        return PLAY_CARD_ACTIONS[discard_idx]
-
-    def _get_going_alone_action(self, game: Game):
-        """
-        Decide whether to go alone using heuristics.
-        """
-        my_hand = game.round.hands[self.player]
-        trump_suit = game.round.trump_esuit
-
-        if should_go_alone(my_hand, trump_suit):
-            return EAction.GO_ALONE
-        else:
-            return EAction.DONT_GO_ALONE
-
-    def _get_second_bidding_action(self, game: Game):
-        """
-        Decide whether to call suit in second bidding round using heuristics.
-        """
-        my_hand = game.round.hands[self.player]
-        upcard = game.round.upcard
-        is_dealer = (game.round.dealer == self.player)
-
-        should_call, suit = should_call_suit_second_round(my_hand, upcard, is_dealer)
-
-        if should_call:
-            return EAction.ORDER_UP
-        else:
-            return EAction.PASS
-
-    def _get_suit_choice_action(self, game: Game):
-        """
-        Choose which suit to call in second bidding round.
-        """
-        my_hand = game.round.hands[self.player]
-        upcard = game.round.upcard
-        excluded_suit = get_ecard_esuit(upcard)
-
-        best_suit, _ = choose_best_suit(my_hand, excluded_suit=excluded_suit)
-        return get_suit_choice_action(best_suit)
-
     def _get_playing_action(self, game: Game):
         """
         Choose which card to play using POMCP planner.
         """
         return self.planner.select_action(game)
-
+    
 def test_agent(print_output: bool = True):
     game = Game()
-
+    import numpy as np
+    data = np.load('play_only_euchre_agent_bidding_weights_200000.npz')
+    order_weights = data["order_weights"]
+    order_bias = data["order_bias"]
+    order_alone_weights = data["order_alone_weights"]
+    order_alone_bias = data["order_alone_bias"]
     # Create agents for Team 0 (Player 0 and Player 2)
     agent_player0 = EuchrePOMDPAgent(
         player=EPlayer.Player0_Team0,
+        order_weights=order_weights,
+        order_bias=order_bias,
+        order_alone_weights=order_alone_weights,
+        order_alone_bias=order_alone_bias,
         num_particles=500,
         num_simulations=200 # higher is better but slower (200 = 7.5s per game on my machine)
     )
 
     agent_player2 = EuchrePOMDPAgent(
         player=EPlayer.Player2_Team0,
+        order_weights=order_weights,
+        order_bias=order_bias,
+        order_alone_weights=order_alone_weights,
+        order_alone_bias=order_alone_bias,
         num_particles=500,
         num_simulations=200
     )
@@ -315,5 +250,5 @@ def run_sims(n = 100):
     print(f"Average points per game - Team 0: {team0_points/n:.2f}, Team 1: {team1_points/n:.2f}")
 
 if __name__ == "__main__":
-    #run_sims(500)
-    test_agent(print_output=True)
+    run_sims(10)
+    #test_agent(print_output=True)

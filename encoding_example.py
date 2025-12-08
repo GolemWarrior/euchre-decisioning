@@ -4,6 +4,7 @@ from euchre.round import Round
 from state_encoding.minimal_rl import encode_state as minimal_encode_state
 from state_encoding.minimal_rl import encode_state_with_card_prob as minimal_encode_state_with_card_prob
 from state_encoding.verbose_rl import encode_state as verbose_encode_state
+from state_encoding.good_rl import encode_state as good_encode_state
 from euchre.players import PLAYER_COUNT
 
 player = random.randint(0, PLAYER_COUNT - 1)
@@ -24,6 +25,9 @@ def print_random_encoded_game_state():
 
             print("\nVerbose:")
             print(verbose_encode_state(round))
+
+            print("\nGood:")
+            print(good_encode_state(round))
 
             return
 
