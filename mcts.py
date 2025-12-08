@@ -88,6 +88,7 @@ class POMCPPlanner:
         self.root = MCTSNode()
         self._processed_action_count = 0
 
+    
     def select_action(self, game):
         """
         Select best action using POMCP search.
@@ -98,7 +99,6 @@ class POMCPPlanner:
         Returns:
             Best action according to MCTS
         """
-        
         round_state = game.round
         
         # Update belief based on any new observations
